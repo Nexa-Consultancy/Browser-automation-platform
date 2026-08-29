@@ -1,0 +1,267 @@
+import { useEffect, useState } from "react";
+import * as api from "../api";
+
+const TASK_PLACEHOLDER = `fill Email with {{name}}@example.com
+click Join
+wait for text "Live"
+wait for video`;
+
+const MAX_USERS = 200;
+
+// Monday-first for display; the values are 0 = Sunday ... 6 = Saturday,
+// which is what the server stores and what Date#getDay returns.
+const DAYS: { value: number; label: string }[] = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 0, label: "Sun" },
+];
+
+/** Grows/shrinks the name roster in place so names already typed survive a
+ * change to the user count (both directions). */
+function resizeNames(names: string[], count: number): string[] {
+  return Array.from({ length: count }, (_, i) => names[i] ?? "");
+}
+
+/** "17:00" -> "5:00 PM", for the plain-language echo under the time fields. */
+function to12Hour(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  const suffix = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+export function GroupModal({
+  serverTimezone,
+  onClose,
+  onCreated,
+}: {
+  serverTimezone: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [targetUrl, setTargetUrl] = useState("");
+  const [steps, setSteps] = useState("");
+  const [userCount, setUserCount] = useState(2);
+  const [names, setNames] = useState<string[]>(["", ""]);
+  const [startTime, setStartTime] = useState("17:00");
+  const [endTime, setEndTime] = useState("21:00");
+  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [autoFollow, setAutoFollow] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  function changeUserCount(raw: number) {
+    const count = Math.max(1, Math.min(MAX_USERS, Math.floor(raw) || 1));
+    setUserCount(count);
+    setNames((prev) => resizeNames(prev, count));
+  }
+
+  function changeName(index: number, value: string) {
+    setNames((prev) => prev.map((n, i) => (i === index ? value : n)));
+  }
+
+  function toggleDay(value: number) {
+    setDays((prev) => (prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value]));
+  }
+
+  const crossesMidnight = endTime < startTime;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const filled = names.map((n) => n.trim());
+    if (filled.some((n) => !n)) {
+      setError(`Enter a name for all ${userCount} user(s) — every user in the group needs one.`);
+      return;
+    }
+    if (days.length === 0) {
+      setError("Pick at least one day for this group to run on.");
+      return;
+    }
+    if (startTime === endTime) {
+      setError("Start time and end time must differ.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.createGroup({
+        name,
+        targetUrl,
+        steps,
+        userNames: filled,
+        startTime,
+        endTime,
+        days,
+        timezone: serverTimezone,
+        enabled: autoFollow,
+      });
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel modal-form" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>Create new group</span>
+          <button type="button" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <form className="form-grid" onSubmit={submit}>
+          {error && <div className="error-banner">{error}</div>}
+
+          <div className="form-section">
+            <div className="eyebrow">Target</div>
+            <div className="form-two-col">
+              <div className="form-row">
+                <label>Group name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Evening webinar crew"
+                />
+              </div>
+              <div className="form-row">
+                <label>Link</label>
+                <input
+                  type="url"
+                  required
+                  value={targetUrl}
+                  onChange={(e) => setTargetUrl(e.target.value)}
+                  placeholder="https://app.example.com/room/42"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="eyebrow">Users</div>
+            <div className="form-row" style={{ maxWidth: 200 }}>
+              <label>Number of users</label>
+              <input
+                type="number"
+                min={1}
+                max={MAX_USERS}
+                value={userCount}
+                onChange={(e) => changeUserCount(Number(e.target.value))}
+              />
+            </div>
+            <div className="name-grid">
+              {names.map((n, i) => (
+                <div className="form-row" key={i}>
+                  <label>User {i + 1}</label>
+                  <input
+                    type="text"
+                    value={n}
+                    onChange={(e) => changeName(i, e.target.value)}
+                    placeholder={`e.g. ${["Asha", "Ravi", "Meera", "Dev", "Nila"][i % 5]}`}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="hint">
+              One browser session per user, fully isolated. Each name is available in the task as {"{{name}}"}.
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="eyebrow">Task</div>
+            <div className="form-row">
+              <label>What this group should do (one step per line)</label>
+              <textarea
+                required
+                rows={6}
+                value={steps}
+                onChange={(e) => setSteps(e.target.value)}
+                placeholder={TASK_PLACEHOLDER}
+              />
+              <div className="hint">
+                The link above is opened automatically as step 1. Supported: click X · fill X with Y · type X ·
+                select X in Y · check/uncheck X · press KEY · wait for text "X" · wait N seconds · wait for video ·
+                wait for element "selector" · screenshot
+              </div>
+            </div>
+          </div>
+
+          <div className="form-section">
+            <div className="eyebrow">Schedule</div>
+
+            <div className="form-row">
+              <label>Days</label>
+              <div className="day-picker">
+                {DAYS.map((d) => (
+                  <label className={`day-chip${days.includes(d.value) ? " on" : ""}`} key={d.value}>
+                    <input type="checkbox" checked={days.includes(d.value)} onChange={() => toggleDay(d.value)} />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-two-col" style={{ marginTop: 14 }}>
+              <div className="form-row">
+                <label>Start</label>
+                <input type="time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>End</label>
+                <input type="time" required value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+              </div>
+            </div>
+            <div className="hint">
+              Active from <strong>{to12Hour(startTime)}</strong> to <strong>{to12Hour(endTime)}</strong>
+              {crossesMidnight ? " the next morning" : ""} on each selected day — {serverTimezone} (server region).
+            </div>
+
+            <label className="switch-row">
+              <input type="checkbox" checked={autoFollow} onChange={(e) => setAutoFollow(e.target.checked)} />
+              <span className="switch-track" aria-hidden="true">
+                <span className="switch-knob" />
+              </span>
+              <span className="switch-text">
+                <strong>Follow this schedule automatically</strong>
+                <span className="hint">
+                  {autoFollow
+                    ? "The server starts and stops this group on its own — nobody needs the dashboard open. If it's already inside its window when you save, it starts within a few seconds."
+                    : "Held off by hand — this group runs only when you press Join now."}
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div className="form-section modal-actions">
+            <button type="button" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button className="primary" type="submit" disabled={submitting}>
+              {submitting ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

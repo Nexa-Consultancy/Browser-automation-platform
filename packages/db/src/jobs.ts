@@ -8,6 +8,7 @@ interface JobRow {
   steps: string[];
   concurrency: number;
   status: JobStatus;
+  group_id: string | null;
   created_at: Date;
 }
 
@@ -19,6 +20,7 @@ function toJob(r: JobRow): Job {
     steps: r.steps,
     concurrency: r.concurrency,
     status: r.status,
+    groupId: r.group_id ?? null,
     createdAt: r.created_at.toISOString(),
   };
 }
@@ -28,12 +30,15 @@ export async function createJob(input: {
   targetUrl: string;
   steps: string[];
   concurrency: number;
+  /** Set when a scheduled group launched this run, so the dashboard can
+   * trace a job back to the group that spawned it. */
+  groupId?: string | null;
 }): Promise<Job> {
   const { rows } = await pool.query<JobRow>(
-    `INSERT INTO jobs (name, target_url, steps, concurrency, status)
-     VALUES ($1, $2, $3::jsonb, $4, 'pending')
+    `INSERT INTO jobs (name, target_url, steps, concurrency, status, group_id)
+     VALUES ($1, $2, $3::jsonb, $4, 'pending', $5)
      RETURNING *`,
-    [input.name, input.targetUrl, JSON.stringify(input.steps), input.concurrency],
+    [input.name, input.targetUrl, JSON.stringify(input.steps), input.concurrency, input.groupId ?? null],
   );
   return toJob(rows[0]);
 }

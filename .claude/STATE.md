@@ -4,7 +4,8 @@ GOAL: Web QA automation platform — URL + CSV/names of users + English step
 script → parallel isolated Playwright sessions, live per-user dashboard,
 per-user and stop-all controls, interactive takeover, video-wait timers.
 
-REPO: https://github.com/Nexa-Consultancy/qa-automation-platform (public).
+REPO: https://github.com/Nexa-Consultancy/Browser-automation-platform
+(renamed from qa-automation-platform).
 Local dir is the git repo (git init'd, not a submodule/nested repo issue).
 Commits authored as `abhinay0 <ab4h1@proton.me>` only — no AI attribution,
 per global CLAUDE.md. Push after any change the user should see live.
@@ -47,6 +48,20 @@ DONE (beyond initial build):
   viewfinder corner-brackets + pulsing tally-dot on every live screencast
   (grid card and modal). Form reorganized into labeled panels (TARGET/
   USERS/SCRIPT). See git log for the full commit message/rationale.
+- **Groups** (scheduled, unattended runs): a Groups tab + "create new
+  group" popup taking a link, a task script, a user count that renders that
+  many name fields, and a start/end time. The API process runs the
+  scheduler (packages/api/src/scheduler.ts): every 20s it asks, per group,
+  "is the wall clock inside this window, in this group's zone?" and starts
+  a normal job / stops every session accordingly. Manual and scheduled runs
+  share one launch path (packages/api/src/services/launch.ts), so a
+  scheduled run is the same kind of job as a hand-started one.
+  Groups also carry weekday checkboxes (days, 0=Sun..6=Sat) and a "follow
+  this schedule automatically" toggle (the existing `enabled` column) —
+  off means the group only runs on "Join now".
+  Added packages/shared/src/time.ts + its tests (`npm test`, the repo's
+  first) — the window math is where the quiet failures live (DST, midnight
+  crossing, weekday filtering, double-fire).
 
 NEXT: user said more features are coming later; nothing specific queued
 right now. Open decision point from an earlier turn: whether to add a
@@ -54,6 +69,25 @@ lightweight shared-API-token auth gate before this goes on a real server
 (not yet answered).
 
 DECISIONS:
+- Groups fire on a *level* check ("are we inside the window?") not an edge
+  trigger ("did the clock just pass 17:00?"), so an API restart across the
+  start minute catches up instead of silently missing the day. Once-per-
+  window is enforced by a conditional UPDATE on groups.last_occurrence_key
+  in Postgres, not by in-process state, so it survives replicas/restarts.
+- Group times are stored as "HH:MM" text + an IANA zone, never TIMESTAMPTZ:
+  the intent is "5 PM local, every day", a wall-clock rule — an instant
+  would drift an hour across DST.
+- Stopping a group's run early consumes that day's occurrence, so it isn't
+  instantly relaunched by the next tick while the window is still open.
+- "Join now" (manual run) deliberately does NOT consume the occurrence —
+  the scheduled run still happens on time — and is flagged
+  groups.active_job_manual so the scheduler never stops it. Without that
+  flag a manual run started outside the window was killed by the very next
+  tick, since "outside the window + a run open" reads as "window closed".
+- The weekday filter is applied to the date the window *started* on, so a
+  Friday-only 21:00->02:00 group runs through to Saturday 2 AM.
+- minutesUntilStart searches forward up to 7 days (not just "later today"),
+  so the countdown is honest for a group that runs once a week.
 - Viewport fixed at 1280x720 in both worker (context creation) and
   dashboard (packages/dashboard/src/viewport.ts) — keep in sync.
 - Sessions never auto-close after their steps (success OR failure); they
@@ -63,6 +97,10 @@ DECISIONS:
   Postgres) — only structured events are durably persisted.
 
 GOTCHAS:
+- A container's clock is UTC unless TZ is set, so a group set to "5 PM"
+  fires at 5 PM UTC. docker-compose passes TZ through to the api service
+  and .env.example documents it; the dashboard shows the zone in effect
+  next to every group so it's visible rather than assumed.
 - worker/package.json pins playwright to exact "1.49.0" (no caret) — must
   match the Docker image tag `mcr.microsoft.com/playwright:v1.49.0-jammy`.
 - ioredis v5 default-export under NodeNext moduleResolution breaks TS

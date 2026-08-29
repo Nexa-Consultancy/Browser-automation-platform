@@ -21,6 +21,7 @@ export interface Job {
   steps: string[]; // raw English step lines, template placeholders like {{email}}
   concurrency: number;
   status: JobStatus;
+  groupId: string | null; // set when a scheduled group launched this run
   createdAt: string;
 }
 
@@ -71,3 +72,54 @@ export type InputAction =
   | { kind: "type"; text: string }
   | { kind: "key"; key: string }
   | { kind: "scroll"; deltaY: number };
+
+/**
+ * A scheduled group: a saved link + task + roster of users that the server
+ * launches on its own, every day, between a start and an end wall-clock
+ * time in its own timezone. No human needs to be at the dashboard — the
+ * API's scheduler starts a real job at `startTime` and stops every session
+ * in it at `endTime`.
+ */
+export interface Group {
+  id: string;
+  name: string;
+  targetUrl: string;
+  steps: string[]; // same plain-English step language as a manual job
+  userNames: string[]; // one entry per user; length IS the user count
+  startTime: string; // "HH:MM", 24-hour, local to `timezone`
+  endTime: string; // "HH:MM"; earlier than startTime means it crosses midnight
+  /** Weekdays the window opens on: 0 = Sunday … 6 = Saturday. */
+  days: number[];
+  timezone: string; // IANA zone, defaults to the server's own region
+  /** "Follow this schedule automatically" — when false the group only runs
+   * when someone presses Join now; the scheduler skips it entirely. */
+  enabled: boolean;
+  /** The job this group launched and is currently holding open, if any. */
+  activeJobId: string | null;
+  /** True when that run was started by hand ("Run now") rather than by the
+   * clock — the scheduler leaves those alone instead of stopping them. */
+  activeRunIsManual: boolean;
+  /** Occurrence key ("YYYY-MM-DD@HH:MM") the scheduler last started, so a
+   * given day's window fires exactly once however often the tick runs. */
+  lastOccurrenceKey: string | null;
+  lastStartedAt: string | null;
+  lastStoppedAt: string | null;
+  createdAt: string;
+}
+
+/** Live scheduling read-out the API computes for the dashboard. */
+export interface GroupSchedule {
+  inWindow: boolean;
+  /** The occurrence in progress right now ("YYYY-MM-DD@HH:MM"), or null
+   * when outside the window. Compare with the group's lastOccurrenceKey to
+   * tell "about to start" apart from "already ran and was stopped". */
+  occurrenceKey: string | null;
+
+  minutesUntilStart: number;
+  minutesUntilEnd: number;
+  localTime: string; // "HH:MM" right now in the group's zone
+}
+
+export interface GroupWithSchedule extends Group {
+  schedule: GroupSchedule;
+}

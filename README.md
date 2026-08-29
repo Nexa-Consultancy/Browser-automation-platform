@@ -9,6 +9,12 @@ a "video is playing, 3:12 elapsed" timer for long video/meeting waits, a
 text feed of everything that happened, click/type takeover into the live
 browser, and per-user + global Stop buttons.
 
+Runs can also start themselves: a **group** saves a link, a task and a
+roster of users, and the server launches it on the weekdays you pick,
+between a start and an end time in your region — no one has to be at the
+dashboard. See
+[Groups](#groups--runs-that-start-themselves-on-a-schedule).
+
 It ships as a Docker Compose stack — meant to be deployed once on a server
 (a VPS, an internal box, whatever you've got) so your whole team hits the
 same dashboard at a shared URL, rather than each person running it locally.
@@ -25,7 +31,9 @@ dashboard (React, nginx)  →  api (Fastify)  →  Postgres  (jobs/sessions/even
 
 - **api** — REST endpoints to create/inspect jobs, stop sessions, and push
   follow-up steps; a WebSocket (`/ws`) relays live events, screencast
-  frames, and interactive input passthrough.
+  frames, and interactive input passthrough. It also runs the **group
+  scheduler** (see [Groups](#groups--runs-that-start-themselves-on-a-schedule)),
+  which starts and stops saved groups on their own daily wall-clock window.
 - **worker** — consumes queued jobs, launches one Chromium instance per job
   and one isolated `BrowserContext` per user, parses each English step into
   a deterministic Playwright action, and streams status/screencast back
@@ -75,6 +83,76 @@ rather than closing — that's what lets you send a **second prompt**
 (per-user or "send to all") later, or reach in and click/type directly via
 the live screencast, before you explicitly hit **Stop**.
 
+## Groups — runs that start themselves on a schedule
+
+Everything above describes a run you start by hand. A **group** is the same
+thing set to fire on its own: a saved link, a task, and a roster of users
+that the server launches every day between a start and an end wall-clock
+time, with nobody at the dashboard.
+
+Open the **Groups** tab and hit **+ Create new group**:
+
+| Field | Meaning |
+|---|---|
+| Group name | What it's called in the list |
+| Link | The page every user in the group opens |
+| Number of users | Typing `3` gives you three name fields to fill in — one browser session per name, isolated exactly as in a manual run |
+| Task | The same plain-English step script; the link is opened as step 1 for you |
+| Days | Checkboxes for the weekdays it runs (Mon–Sun) |
+| Start / End | The window it's active between on each of those days, in the server's region |
+| Follow this schedule automatically | On: the server runs it on its own. Off: it's *held off by hand* and only runs when you press **Join now** |
+
+At the start time the server creates a real job — same sessions, same live
+screencast grid, same controls as a manual run — and at the end time it
+stops every session in it. In between you can open it with **Watch live**
+and take over any user's browser as usual.
+
+An end time earlier than the start time means the window crosses midnight
+(`21:00 → 02:00`). The day filter applies to the day the window *opened*,
+so a Friday-only overnight group keeps running into Saturday morning rather
+than being cut off at midnight.
+
+- **Join now** starts the group immediately without waiting for its window,
+  which is how you check a group works instead of finding out at 5 PM. A run
+  started this way is yours: the scheduler never stops it, so it keeps going
+  until you press **Stop now**. It also doesn't consume the day's scheduled
+  run, which still happens on time.
+- **Hold off schedule** leaves the group in place but takes the clock out of
+  it entirely — it then runs only when you press **Join now**, and a run
+  already under way is left alone. This is the same switch as *Follow this
+  schedule automatically* in the create dialog. **Delete** removes the group,
+  stopping any run it has open.
+- Stopping a *scheduled* run early — from the group card or the run's own
+  **Stop all** — is final for that window. It won't be relaunched until the
+  next selected day.
+- Saving a group while the clock is *already inside* its window starts it
+  within a few seconds, rather than waiting until tomorrow.
+
+### Set your region
+
+Groups fire on wall-clock times, and **a container's clock is UTC unless you
+tell it otherwise** — so "5 PM" means 5 PM UTC until you set `TZ` in
+`.env` to your own IANA zone:
+
+```bash
+TZ=Asia/Kolkata          # or Europe/London, America/New_York, ...
+docker compose up -d --build api
+```
+
+The zone actually in effect is shown in the Groups tab and on every group
+card, so it's visible rather than something you have to remember.
+
+Scheduling lives in the API process (`packages/api/src/scheduler.ts`), which
+re-checks every 20s (`GROUP_SCHEDULER_TICK_MS`) whether each group's window
+is open. It's a level check ("are we inside the window?"), not an edge
+trigger ("did the clock just pass 17:00?") — so a restart or redeploy across
+the start minute catches up instead of silently missing the day. Firing once
+per window is enforced by a conditional `UPDATE` in Postgres, so it holds
+even if the API is ever run as more than one replica.
+
+`npm test` covers the window math — DST shifts, midnight crossing, weekday
+selection, and the once-per-window guarantee.
+
 ## Running it
 
 ```bash
@@ -100,6 +178,8 @@ npm run dev:api        # terminal 1
 npm run dev:worker     # terminal 2
 npm run dev:dashboard  # terminal 3 → http://localhost:5173
 ```
+
+`npm test` runs the group scheduling/timezone tests (`packages/shared/src/time.test.ts`).
 
 ## Deploying on a server
 

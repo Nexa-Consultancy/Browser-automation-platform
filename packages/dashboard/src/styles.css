@@ -349,3 +349,155 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
 .session-followup input { flex: 1; font-family: var(--font-mono); font-size: 12.5px; }
 
 .empty-state { color: var(--text-faint); text-align: center; padding: 40px 0; font-family: var(--font-mono); font-size: 13px; }
+
+/* ---------- header tabs ---------- */
+
+.app-tabs { display: flex; gap: 4px; }
+.app-tabs button {
+  background: transparent; border-color: transparent; color: var(--text-dim);
+  font-family: var(--font-display); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 12px;
+}
+.app-tabs button:hover:not(.active) { color: var(--text); border-color: var(--line); }
+.app-tabs button.active {
+  color: var(--live); border-color: rgba(59, 130, 246, 0.4); background: rgba(59, 130, 246, 0.08);
+}
+
+@media (max-width: 640px) {
+  .app-header { flex-wrap: wrap; gap: 10px; }
+  .app-tabs { order: 3; width: 100%; }
+}
+
+/* ---------- scheduled groups ---------- */
+
+.group-list { display: grid; gap: 12px; }
+
+.group-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--muted);
+  border-radius: 10px;
+  padding: 15px 17px;
+  display: grid;
+  gap: 10px;
+}
+/* The left rail is the at-a-glance state: same tally-light grammar as a
+   session box, so "live" reads identically wherever it appears. */
+.group-card.state-live, .group-card.state-starting, .group-card.state-manual {
+  border-left-color: var(--live);
+}
+.group-card.state-held { border-left-color: var(--line); opacity: 0.72; }
+
+.group-card-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;
+}
+.group-title { display: flex; align-items: center; gap: 9px; }
+.group-title .name { font-family: var(--font-display); font-weight: 600; font-size: 15px; }
+.group-title .group-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;
+}
+.state-live .group-dot, .state-starting .group-dot, .state-manual .group-dot {
+  background: var(--live); box-shadow: 0 0 7px rgba(59, 130, 246, 0.8);
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
+.group-state {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-faint); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px;
+}
+.state-live .group-state, .state-starting .group-state, .state-manual .group-state {
+  color: var(--live); border-color: rgba(59, 130, 246, 0.4);
+}
+
+.group-window {
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--text);
+  display: flex; align-items: baseline; gap: 8px;
+}
+.group-window .tz { color: var(--text-faint); font-size: 11px; }
+.group-window .group-days {
+  color: var(--text-dim); font-size: 11px; letter-spacing: 0.04em;
+  border-right: 1px solid var(--line); padding-right: 8px;
+}
+
+.group-meta {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);
+}
+.group-meta .target { color: var(--text-faint); word-break: break-all; }
+
+.group-countdown {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  background: var(--panel-2); border-radius: 6px; padding: 7px 10px;
+  border-left: 2px solid var(--line);
+}
+.state-live .group-countdown, .state-starting .group-countdown, .state-manual .group-countdown {
+  color: var(--live); border-left-color: var(--live); background: rgba(59, 130, 246, 0.08);
+}
+
+.group-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+
+/* ---------- create-group popup ---------- */
+
+.modal-form { width: min(720px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; }
+.modal-form .form-grid { gap: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* One name field per user — the count field drives how many appear. */
+.name-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px; margin-top: 12px;
+}
+
+input[type="time"] {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; padding: 8px 11px; font-size: 13px;
+  font-family: var(--font-mono); width: 100%;
+}
+input[type="time"]:focus { border-color: var(--live); }
+input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+/* ---------- day picker + auto-follow switch ---------- */
+
+.day-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Real checkboxes kept in the DOM (hidden, not removed) so the control stays
+   keyboard-reachable and screen-reader-legible — the chip is only paint. */
+.day-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 46px; padding: 7px 10px; margin: 0; cursor: pointer;
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--text-dim); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 6px;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+  white-space: nowrap; overflow: visible;
+}
+.day-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
+.day-chip:hover { border-color: var(--live); }
+.day-chip.on {
+  color: var(--live); border-color: rgba(59, 130, 246, 0.55); background: rgba(59, 130, 246, 0.1);
+}
+.day-chip:focus-within { outline: 2px solid var(--live); outline-offset: 2px; }
+
+.switch-row {
+  display: flex; align-items: flex-start; gap: 11px; margin: 16px 0 0;
+  padding: 12px 13px; cursor: pointer; white-space: normal; overflow: visible;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+}
+.switch-row > input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track {
+  flex-shrink: 0; margin-top: 1px; width: 34px; height: 19px; border-radius: 999px;
+  background: var(--panel-3); border: 1px solid var(--line);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.switch-knob {
+  display: block; width: 13px; height: 13px; border-radius: 50%; margin: 2px;
+  background: var(--muted); transition: transform 140ms ease, background 140ms ease;
+}
+.switch-row > input:checked ~ .switch-track {
+  background: rgba(59, 130, 246, 0.25); border-color: var(--live);
+}
+.switch-row > input:checked ~ .switch-track .switch-knob {
+  background: var(--live); transform: translateX(15px);
+}
+.switch-row > input:focus-visible ~ .switch-track { outline: 2px solid var(--live); outline-offset: 2px; }
+.switch-text { display: grid; gap: 3px; font-size: 12.5px; color: var(--text); }
+.switch-text .hint { margin-top: 0; }

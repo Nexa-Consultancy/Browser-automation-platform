@@ -1,4 +1,4 @@
-import type { Job, SessionRow } from "./types";
+import type { GroupWithSchedule, Job, SessionRow } from "./types";
 
 const API_BASE = ""; // same-origin in prod (nginx proxies /api); Vite dev server proxies /api too
 
@@ -66,4 +66,57 @@ export async function appendStepsToSession(sessionId: string, steps: string): Pr
       body: JSON.stringify({ steps }),
     }),
   );
+}
+
+// ---------- scheduled groups ----------
+
+export interface CreateGroupInput {
+  name: string;
+  targetUrl: string;
+  steps: string;
+  userNames: string[];
+  startTime: string; // "HH:MM"
+  endTime: string; // "HH:MM"
+  days: number[]; // 0 = Sunday ... 6 = Saturday
+  timezone: string;
+  enabled: boolean; // "follow this schedule automatically"
+}
+
+export async function listGroups(): Promise<{ groups: GroupWithSchedule[]; serverTimezone: string }> {
+  return json(await fetch(`${API_BASE}/api/groups`));
+}
+
+export async function createGroup(input: CreateGroupInput): Promise<{ group: GroupWithSchedule }> {
+  return json(
+    await fetch(`${API_BASE}/api/groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function setGroupEnabled(id: string, enabled: boolean): Promise<void> {
+  await json(
+    await fetch(`${API_BASE}/api/groups/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }),
+  );
+}
+
+export async function deleteGroup(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/groups/${id}`, { method: "DELETE" }));
+}
+
+/** "Join now" — start a group's run immediately without waiting for its
+ * window. The scheduled run still happens on time, and the scheduler won't
+ * stop a run started this way. Resolves to the new job's id. */
+export async function runGroupNow(id: string): Promise<{ jobId: string }> {
+  return json(await fetch(`${API_BASE}/api/groups/${id}/run-now`, { method: "POST" }));
+}
+
+export async function stopGroupNow(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/groups/${id}/stop-now`, { method: "POST" }));
 }

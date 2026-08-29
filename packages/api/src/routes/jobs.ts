@@ -1,17 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { createJob, createSessions, getJob, listJobs, listSessionsByJob, setJobStatus } from "@automation/db";
-import { enqueueJob } from "@automation/queue";
+import { getJob, listJobs, listSessionsByJob } from "@automation/db";
 import { parseUserCsv, buildDefaultUsers, buildNamedUsers } from "@automation/shared";
 import { publishControl } from "../pubsub.js";
-
-function linesOf(text: string): string[] {
-  return (text ?? "")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-const OPEN_STEP_RE = /^(open|go to|navigate to)\s+/i;
+import { launchJob, linesOf, normalizeSteps, stopJob } from "../services/launch.js";
 
 export async function jobRoutes(app: FastifyInstance): Promise<void> {
   // multipart: CSV file field "csv" (optional) + form fields name/targetUrl/
@@ -41,12 +32,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (!targetUrl?.trim()) return reply.code(400).send({ error: "targetUrl is required" });
-    const steps = linesOf(stepsText);
-    // The Target URL is already given in the form — don't make users spell
-    // out an "open" step for it too, unless they explicitly wrote their own.
-    if (steps.length === 0 || !OPEN_STEP_RE.test(steps[0])) {
-      steps.unshift("open {{url}}");
-    }
+    const steps = normalizeSteps(stepsText);
 
     const names = namesStr
       .split(",")
@@ -68,16 +54,12 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
     if (users.length === 0) return reply.code(400).send({ error: "no users resolved from CSV/names/userCount" });
     if (users.length > 200) return reply.code(400).send({ error: "too many users (max 200 per job)" });
 
-    const concurrency = Math.min(users.length, 50);
-
-    const job = await createJob({
+    const { job, sessions } = await launchJob({
       name: name?.trim() || `Job ${new Date().toISOString()}`,
       targetUrl: targetUrl.trim(),
       steps,
-      concurrency,
+      users,
     });
-    const sessions = await createSessions(job.id, users, steps.length);
-    await enqueueJob(job.id);
 
     reply.code(201).send({ job, sessions });
   });
@@ -93,19 +75,13 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Top-level "Stop all" — signals every non-terminal session's browser to
-  // close. "failed" is NOT terminal here: the worker deliberately keeps a
-  // failed session's browser open (parked, fixable) until it's told to
-  // stop — see packages/worker/src/runner.ts.
+  // close. If this job was launched by a group, the scheduler notices it
+  // has ended and releases the group's slot on its next tick (without
+  // relaunching it inside the same window).
   app.post("/api/jobs/:id/stop-all", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const sessions = await listSessionsByJob(id);
-    for (const s of sessions) {
-      if (!["completed", "stopped"].includes(s.status)) {
-        await publishControl(s.id, { type: "stop" });
-      }
-    }
-    await setJobStatus(id, "stopped");
-    reply.send({ ok: true, stopped: sessions.length });
+    const stopped = await stopJob(id);
+    reply.send({ ok: true, stopped });
   });
 
   // Second-prompt follow-up steps applied to every session in the job.
