@@ -3,6 +3,22 @@ import { newRedisConnection, eventsChannel, screencastChannel, controlChannel } 
 import { listSessionsByJob } from "@automation/db";
 import type { ControlMessage } from "@automation/shared";
 
+// Unlike fetch/XHR, a browser will happily open a WebSocket to any origin —
+// same-origin policy doesn't apply to the connection itself. Without this
+// check, any third-party page a viewer merely has open in another tab could
+// connect here and, given a job id, ride along on its event/screencast
+// stream and send input actions. This isn't a substitute for real
+// authentication (there isn't any yet — see the README) but it closes the
+// no-visit-required drive-by version of that gap.
+function isAllowedOrigin(origin: string | undefined, host: string | undefined): boolean {
+  if (!origin) return true; // non-browser clients (curl, server-to-server) send no Origin header
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * One WS connection per dashboard tab. The client sends {type:"subscribe",
  * jobId} once it opens a job view, then this relays that job's Redis event
@@ -11,7 +27,12 @@ import type { ControlMessage } from "@automation/shared";
  * other direction over the same socket for minimum latency.
  */
 export async function registerWs(app: FastifyInstance): Promise<void> {
-  app.get("/ws", { websocket: true }, (socket) => {
+  app.get("/ws", { websocket: true }, (socket, request) => {
+    if (!isAllowedOrigin(request.headers.origin, request.headers.host)) {
+      socket.close(1008, "origin not allowed");
+      return;
+    }
+
     const sub = newRedisConnection();
     const pub = newRedisConnection();
     const subscribed = new Set<string>();

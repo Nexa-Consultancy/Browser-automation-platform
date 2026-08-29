@@ -2,6 +2,7 @@ import type { Page } from "playwright";
 import { applyTemplate, type ParsedStep } from "@automation/shared";
 import { resolveClickable, resolveField } from "./locators.js";
 import { waitForVideoToEnd } from "./waitForVideo.js";
+import { assertSafeNavigationTarget } from "./urlSafety.js";
 
 export interface StepContext {
   row: Record<string, string>;
@@ -15,9 +16,12 @@ const t = (s: string, row: Record<string, string>) => applyTemplate(s, row);
 
 export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext): Promise<void> {
   switch (step.kind) {
-    case "open":
-      await page.goto(t(step.url, ctx.row), { waitUntil: "domcontentloaded", timeout: 60_000 });
+    case "open": {
+      const url = t(step.url, ctx.row);
+      assertSafeNavigationTarget(url);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
       return;
+    }
 
     case "click": {
       const loc = await resolveClickable(page, t(step.target, ctx.row));

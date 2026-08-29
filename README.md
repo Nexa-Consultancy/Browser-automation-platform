@@ -130,7 +130,11 @@ laptop — sessions can stay open for hours (a video wait, a session parked
    team — the dashboard's own nginx only serves plain HTTP. The dashboard
    has no login of its own, so also put it behind your proxy's basic auth,
    a VPN, or an IP allowlist unless you want it open to anyone who reaches
-   that URL.
+   that URL. Make sure your proxy forwards the original `Host` header
+   (Caddy and Traefik do this by default; for nginx add
+   `proxy_set_header Host $host;`) — the API rejects WebSocket connections
+   whose `Origin` doesn't match it, as a defense against other sites
+   silently riding along on a live session's event/screencast stream.
 5. **Scale workers** for more parallel test-run throughput without
    redeploying anything else:
    ```bash
