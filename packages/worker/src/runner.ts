@@ -8,7 +8,7 @@ import {
   setVideoWaitStarted,
   bumpTotalSteps,
 } from "@automation/db";
-import { newRedisConnection, screencastChannel } from "@automation/queue";
+import { newRedisConnection, screencastChannel, screencastLastFrameKey } from "@automation/queue";
 import { parseSteps, type Job, type SessionRow, type ParsedStep, type InputAction } from "@automation/shared";
 import { subscribeControl } from "./controlListener.js";
 import { startScreencast } from "./screencast.js";
@@ -165,6 +165,7 @@ export async function runSession(browser: Browser, job: Job, session: SessionRow
           },
           onScreenshot: (jpegBase64) => {
             pub.publish(screencastChannel(session.id), jpegBase64).catch(() => {});
+            pub.set(screencastLastFrameKey(session.id), jpegBase64, "EX", 3600).catch(() => {});
           },
         });
       } catch (err) {

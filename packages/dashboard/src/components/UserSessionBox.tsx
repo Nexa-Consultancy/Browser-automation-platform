@@ -11,14 +11,16 @@ import * as api from "../api";
 // packages/worker/src/runner.ts) so you can fix it — click through the
 // screencast or send corrected follow-up steps — until you explicitly Stop.
 const TERMINAL = new Set(["completed", "stopped"]);
-const LIVE_INTERACTIVE = new Set(["interactive", "failed"]);
+export const LIVE_INTERACTIVE = new Set(["interactive", "failed"]);
 
 export function UserSessionBox({
   live,
   onInput,
+  onExpand,
 }: {
   live: SessionLive;
   onInput: (action: InputAction) => void;
+  onExpand: () => void;
 }) {
   const { session, steps, frame, log, video, failedIndices } = live;
   const [followup, setFollowup] = useState("");
@@ -53,7 +55,12 @@ export function UserSessionBox({
         <StatusBadge status={session.status} />
       </div>
 
-      <Screencast frame={frame} interactive={LIVE_INTERACTIVE.has(session.status)} onInput={onInput} />
+      <Screencast
+        frame={frame}
+        interactive={LIVE_INTERACTIVE.has(session.status)}
+        onInput={onInput}
+        onExpand={onExpand}
+      />
 
       {session.currentStepText && (
         <div className="session-step-line">

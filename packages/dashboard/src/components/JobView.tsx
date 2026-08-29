@@ -4,7 +4,8 @@ import { applySessionEvent, initSessionLive, type SessionLive } from "../session
 import { useJobSocket } from "../useJobSocket";
 import * as api from "../api";
 import { StatusBadge } from "./StatusBadge";
-import { UserSessionBox } from "./UserSessionBox";
+import { UserSessionBox, LIVE_INTERACTIVE } from "./UserSessionBox";
+import { ScreencastModal } from "./ScreencastModal";
 
 export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const [job, setJob] = useState<Job | null>(null);
@@ -12,6 +13,7 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
   const [error, setError] = useState<string | null>(null);
   const [broadcast, setBroadcast] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +81,8 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
   if (error) return <div className="container error-banner">{error}</div>;
   if (!job) return <div className="container empty-state">Loading…</div>;
 
+  const expanded = expandedId ? live[expandedId] : null;
+
   return (
     <div className="container">
       <div className="job-toolbar">
@@ -111,9 +115,24 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
       ) : (
         <div className="session-grid">
           {sessions.map((s) => (
-            <UserSessionBox key={s.session.id} live={s} onInput={(action) => handleInput(s.session.id, action)} />
+            <UserSessionBox
+              key={s.session.id}
+              live={s}
+              onInput={(action) => handleInput(s.session.id, action)}
+              onExpand={() => setExpandedId(s.session.id)}
+            />
           ))}
         </div>
+      )}
+
+      {expanded && (
+        <ScreencastModal
+          userName={expanded.session.userName}
+          frame={expanded.frame}
+          interactive={LIVE_INTERACTIVE.has(expanded.session.status)}
+          onInput={(action) => handleInput(expanded.session.id, action)}
+          onClose={() => setExpandedId(null)}
+        />
       )}
     </div>
   );

@@ -1,5 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { newRedisConnection, eventsChannel, screencastChannel, controlChannel } from "@automation/queue";
+import {
+  newRedisConnection,
+  eventsChannel,
+  screencastChannel,
+  screencastLastFrameKey,
+  controlChannel,
+} from "@automation/queue";
 import { listSessionsByJob } from "@automation/db";
 import type { ControlMessage } from "@automation/shared";
 
@@ -66,6 +72,13 @@ export async function registerWs(app: FastifyInstance): Promise<void> {
           if (!subscribed.has(ch)) {
             await sub.subscribe(ch);
             subscribed.add(ch);
+          }
+          // CDP only pushes frames on repaint, so a static/idle page may
+          // never send another one — without this, a (re)connecting client
+          // sees "waiting for stream…" forever even on a healthy session.
+          const lastFrame = await pub.get(screencastLastFrameKey(s.id));
+          if (lastFrame) {
+            socket.send(JSON.stringify({ type: "screencast", sessionId: s.id, frame: lastFrame }));
           }
         }
         socket.send(JSON.stringify({ type: "subscribed", jobId: msg.jobId, sessions }));
