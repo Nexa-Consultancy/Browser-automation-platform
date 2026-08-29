@@ -1,0 +1,22 @@
+{
+  "name": "qa-automation-platform",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/shared",
+    "packages/db",
+    "packages/queue",
+    "packages/api",
+    "packages/worker",
+    "packages/dashboard"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @automation/api",
+    "dev:worker": "npm run dev -w @automation/worker",
+    "dev:dashboard": "npm run dev -w @automation/dashboard",
+    "typecheck": "npm run typecheck -w @automation/shared -w @automation/db -w @automation/queue -w @automation/api -w @automation/worker -w @automation/dashboard"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

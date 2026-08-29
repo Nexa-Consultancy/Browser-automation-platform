@@ -1,0 +1,7 @@
+open https://app.example.com/login
+fill Email with {{email}}
+fill Password with {{password}}
+click Log in
+wait for text "Dashboard"
+wait for video
+click Continue

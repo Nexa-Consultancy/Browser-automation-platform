@@ -1,0 +1,22 @@
+{
+  "name": "@automation/worker",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@automation/db": "0.1.0",
+    "@automation/queue": "0.1.0",
+    "@automation/shared": "0.1.0",
+    "bullmq": "^5.28.1",
+    "playwright": "1.49.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
