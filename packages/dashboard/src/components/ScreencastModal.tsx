@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { InputAction } from "../types";
 import { ScreencastImage } from "./ScreencastImage";
 import { ScreencastControls } from "./ScreencastControls";
+import { ViewfinderCorners } from "./ViewfinderCorners";
 
 interface Props {
   userName: string;
@@ -32,6 +33,7 @@ export function ScreencastModal({ userName, frame, interactive, onInput, onClose
         </div>
         <div className="modal-screencast">
           <ScreencastImage frame={frame} interactive={interactive} onInput={onInput} />
+          <ViewfinderCorners />
         </div>
         {interactive && <ScreencastControls onInput={onInput} />}
       </div>

@@ -31,7 +31,12 @@ export default function App() {
     <div>
       <header className="app-header">
         <div className="brand" onClick={goHome}>
+          <span className="mark" />
           <h1>QA Automation Platform</h1>
+        </div>
+        <div className="system-status">
+          <span className="dot" />
+          system ready
         </div>
       </header>
 

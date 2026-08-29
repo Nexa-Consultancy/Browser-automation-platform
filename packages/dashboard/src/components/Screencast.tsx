@@ -1,6 +1,7 @@
 import type { InputAction } from "../types";
 import { ScreencastImage } from "./ScreencastImage";
 import { ScreencastControls } from "./ScreencastControls";
+import { ViewfinderCorners } from "./ViewfinderCorners";
 
 interface Props {
   frame: string | null; // base64 JPEG, no data: prefix
@@ -18,6 +19,7 @@ export function Screencast({ frame, interactive, onInput, onExpand }: Props) {
     <div>
       <div className="screencast-wrap">
         <ScreencastImage frame={frame} interactive={interactive} onInput={onInput} />
+        <ViewfinderCorners />
         <button className="expand-btn" onClick={onExpand} title="Expand">⤢</button>
       </div>
       {interactive && <div style={{ marginTop: 6 }}><ScreencastControls onInput={onInput} /></div>}

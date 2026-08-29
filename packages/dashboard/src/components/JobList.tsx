@@ -14,12 +14,12 @@ export function JobList({ onSelect }: { onSelect: (jobId: string) => void }) {
 
   return (
     <div>
-      <h3 style={{ marginBottom: 4 }}>Recent runs</h3>
+      <div className="eyebrow">Recent runs</div>
       <div className="job-list">
         {jobs.map((j) => (
           <div className="job-list-item" key={j.id} onClick={() => onSelect(j.id)}>
-            <span>
-              {j.name} <span className="hint">— {j.targetUrl}</span>
+            <span className="job-name">
+              {j.name} <span className="target">— {j.targetUrl}</span>
             </span>
             <StatusBadge status={j.status} />
           </div>
