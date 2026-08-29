@@ -501,3 +501,23 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cur
 .switch-row > input:focus-visible ~ .switch-track { outline: 2px solid var(--live); outline-offset: 2px; }
 .switch-text { display: grid; gap: 3px; font-size: 12.5px; color: var(--text); }
 .switch-text .hint { margin-top: 0; }
+
+/* ---------- saved task on a group card ---------- */
+
+/* Collapsed by default: the prompt is the longest field on a group and
+   would otherwise dominate a list you scan for schedule and status. */
+.group-task > summary {
+  cursor: pointer; list-style: none;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);
+  padding: 3px 0; user-select: none;
+}
+.group-task > summary::-webkit-details-marker { display: none; }
+.group-task > summary::before { content: "▸ "; color: var(--text-faint); }
+.group-task[open] > summary::before { content: "▾ "; }
+.group-task > summary:hover { color: var(--live); }
+.group-task pre {
+  margin: 6px 0 0; padding: 9px 11px; overflow-x: auto;
+  background: #070a10; border: 1px solid var(--line-soft); border-radius: 6px;
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
+  color: var(--text-dim); white-space: pre-wrap; word-break: break-word;
+}

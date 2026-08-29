@@ -71,6 +71,51 @@ export async function createGroup(input: {
   return toGroup(rows[0]);
 }
 
+/**
+ * Edits a group in place. Everything except the run-tracking columns is
+ * replaceable, so a saved group keeps its identity (and its place in the
+ * list) while its prompt, roster or window change — the point being that a
+ * group stays exactly as configured until someone deliberately changes it.
+ *
+ * Note it does NOT touch last_occurrence_key: editing a group mid-window
+ * shouldn't silently re-fire a window that already ran today.
+ */
+export async function updateGroup(
+  id: string,
+  input: {
+    name: string;
+    targetUrl: string;
+    steps: string[];
+    userNames: string[];
+    startTime: string;
+    endTime: string;
+    days: number[];
+    timezone: string;
+    enabled: boolean;
+  },
+): Promise<Group | null> {
+  const { rows } = await pool.query<GroupDbRow>(
+    `UPDATE groups
+        SET name = $2, target_url = $3, steps = $4::jsonb, user_names = $5::jsonb,
+            start_time = $6, end_time = $7, days = $8::jsonb, timezone = $9, enabled = $10
+      WHERE id = $1
+      RETURNING *`,
+    [
+      id,
+      input.name,
+      input.targetUrl,
+      JSON.stringify(input.steps),
+      JSON.stringify(input.userNames),
+      input.startTime,
+      input.endTime,
+      JSON.stringify(input.days),
+      input.timezone,
+      input.enabled,
+    ],
+  );
+  return rows[0] ? toGroup(rows[0]) : null;
+}
+
 export async function listGroups(): Promise<Group[]> {
   const { rows } = await pool.query<GroupDbRow>(`SELECT * FROM groups ORDER BY created_at DESC LIMIT 200`);
   return rows.map(toGroup);

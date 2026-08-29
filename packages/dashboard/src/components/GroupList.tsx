@@ -40,6 +40,7 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
   const [groups, setGroups] = useState<GroupWithSchedule[]>([]);
   const [serverTimezone, setServerTimezone] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<GroupWithSchedule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -147,6 +148,13 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                 </span>
               </div>
 
+              <details className="group-task">
+                <summary>
+                  Task · {g.steps.length} step{g.steps.length === 1 ? "" : "s"}
+                </summary>
+                <pre>{g.steps.join("\n")}</pre>
+              </details>
+
               <div className="group-countdown">
                 {live && g.activeRunIsManual
                   ? "Running now, started by hand — it keeps going until you stop it."
@@ -193,6 +201,9 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                 >
                   {g.enabled ? "Hold off schedule" : "Follow schedule"}
                 </button>
+                <button disabled={busy === g.id} onClick={() => setEditing(g)}>
+                  Edit
+                </button>
                 <button
                   className="danger"
                   disabled={busy === g.id}
@@ -214,8 +225,24 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
         <GroupModal
           serverTimezone={serverTimezone}
           onClose={() => setModalOpen(false)}
-          onCreated={() => {
+          onSaved={() => {
             setModalOpen(false);
+            void refresh();
+          }}
+        />
+      )}
+
+      {editing && (
+        // Keyed by id so switching straight from one group's Edit to
+        // another's remounts the form with the new group's values instead
+        // of keeping the first one's state.
+        <GroupModal
+          key={editing.id}
+          group={editing}
+          serverTimezone={serverTimezone}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
             void refresh();
           }}
         />

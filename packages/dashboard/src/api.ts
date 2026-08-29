@@ -96,6 +96,18 @@ export async function createGroup(input: CreateGroupInput): Promise<{ group: Gro
   );
 }
 
+/** Full edit of a saved group — replaces prompt, roster, window and days
+ * while keeping the group's identity and run history. */
+export async function updateGroup(id: string, input: CreateGroupInput): Promise<{ group: GroupWithSchedule }> {
+  return json(
+    await fetch(`${API_BASE}/api/groups/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
 export async function setGroupEnabled(id: string, enabled: boolean): Promise<void> {
   await json(
     await fetch(`${API_BASE}/api/groups/${id}`, {

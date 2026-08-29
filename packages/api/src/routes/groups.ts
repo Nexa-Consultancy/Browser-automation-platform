@@ -7,6 +7,7 @@ import {
   setGroupActiveJob,
   setGroupEnabled,
   releaseGroupRun,
+  updateGroup,
 } from "@automation/db";
 import {
   ALL_DAYS,
@@ -54,6 +55,75 @@ function withSchedule(group: Group): GroupWithSchedule {
   };
 }
 
+interface ParsedGroup {
+  name: string;
+  targetUrl: string;
+  steps: string[];
+  userNames: string[];
+  startTime: string;
+  endTime: string;
+  days: number[];
+  timezone: string;
+  enabled: boolean;
+}
+
+/**
+ * One definition of "a valid group", shared by create and edit so the two
+ * can't drift into accepting different things.
+ */
+function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error: string } {
+  const targetUrl = body.targetUrl?.trim() ?? "";
+  if (!targetUrl) return { error: "link (targetUrl) is required" };
+
+  const steps = normalizeSteps(body.steps ?? "");
+  // normalizeSteps always injects "open {{url}}", so a script of nothing but
+  // that means the task field was left empty.
+  if (steps.length < 2) return { error: "task steps are required" };
+
+  const userNames = (Array.isArray(body.userNames) ? body.userNames : [])
+    .map((n) => String(n ?? "").trim())
+    .filter(Boolean);
+  if (userNames.length === 0) return { error: "at least one user name is required" };
+  if (userNames.length > MAX_USERS_PER_GROUP) {
+    return { error: `too many users (max ${MAX_USERS_PER_GROUP} per group)` };
+  }
+
+  let startTime: string;
+  let endTime: string;
+  try {
+    startTime = formatHhMm(parseHhMm(body.startTime ?? ""));
+    endTime = formatHhMm(parseHhMm(body.endTime ?? ""));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "invalid time" };
+  }
+  if (startTime === endTime) return { error: "start time and end time must differ" };
+
+  // Weekdays, 0 = Sunday … 6 = Saturday. Deduped and sorted so the stored
+  // value is canonical however the checkboxes were clicked.
+  const days = [...new Set(Array.isArray(body.days) ? body.days : ALL_DAYS)]
+    .map(Number)
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+    .sort((a, b) => a - b);
+  if (days.length === 0) return { error: "pick at least one day for the group to run on" };
+
+  const timezone = body.timezone?.trim() || serverTimezone();
+  if (!isValidTimezone(timezone)) return { error: `unknown timezone "${timezone}"` };
+
+  return {
+    value: {
+      name: body.name?.trim() ?? "",
+      targetUrl,
+      steps,
+      userNames,
+      startTime,
+      endTime,
+      days,
+      timezone,
+      enabled: body.enabled !== false,
+    },
+  };
+}
+
 export async function groupRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/groups", async () => {
     const groups = await listGroups();
@@ -68,63 +138,36 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/api/groups", async (req, reply) => {
-    const body = (req.body ?? {}) as CreateGroupBody;
-
-    const targetUrl = body.targetUrl?.trim() ?? "";
-    if (!targetUrl) return reply.code(400).send({ error: "link (targetUrl) is required" });
-
-    const steps = normalizeSteps(body.steps ?? "");
-    // normalizeSteps always injects "open {{url}}", so a script of nothing
-    // but that means the task field was left empty.
-    if (steps.length < 2) return reply.code(400).send({ error: "task steps are required" });
-
-    const userNames = (Array.isArray(body.userNames) ? body.userNames : [])
-      .map((n) => String(n ?? "").trim())
-      .filter(Boolean);
-    if (userNames.length === 0) return reply.code(400).send({ error: "at least one user name is required" });
-    if (userNames.length > MAX_USERS_PER_GROUP) {
-      return reply.code(400).send({ error: `too many users (max ${MAX_USERS_PER_GROUP} per group)` });
-    }
-
-    let startTime: string;
-    let endTime: string;
-    try {
-      startTime = formatHhMm(parseHhMm(body.startTime ?? ""));
-      endTime = formatHhMm(parseHhMm(body.endTime ?? ""));
-    } catch (e) {
-      return reply.code(400).send({ error: e instanceof Error ? e.message : "invalid time" });
-    }
-    if (startTime === endTime) {
-      return reply.code(400).send({ error: "start time and end time must differ" });
-    }
-
-    // Weekdays, 0 = Sunday … 6 = Saturday. Deduped and sorted so the stored
-    // value is canonical however the checkboxes were clicked.
-    const days = [...new Set(Array.isArray(body.days) ? body.days : ALL_DAYS)]
-      .map(Number)
-      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-      .sort((a, b) => a - b);
-    if (days.length === 0) {
-      return reply.code(400).send({ error: "pick at least one day for the group to run on" });
-    }
-
-    const timezone = body.timezone?.trim() || serverTimezone();
-    if (!isValidTimezone(timezone)) {
-      return reply.code(400).send({ error: `unknown timezone "${timezone}"` });
-    }
+    const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
+    if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
 
     const group = await createGroup({
-      name: body.name?.trim() || `Group ${new Date().toISOString()}`,
-      targetUrl,
-      steps,
-      userNames,
-      startTime,
-      endTime,
-      days,
-      timezone,
-      enabled: body.enabled !== false,
+      ...parsed.value,
+      name: parsed.value.name || `Group ${new Date().toISOString()}`,
     });
     reply.code(201).send({ group: withSchedule(group) });
+  });
+
+  /**
+   * Full edit. A saved group is meant to stay exactly as configured until
+   * someone deliberately changes it, so this replaces the whole definition
+   * — prompt, roster, window, days — while keeping the group's identity and
+   * its run history.
+   */
+  app.put("/api/groups/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const existing = await getGroup(id);
+    if (!existing) return reply.code(404).send({ error: "not found" });
+
+    const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
+    if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
+
+    const group = await updateGroup(id, {
+      ...parsed.value,
+      name: parsed.value.name || existing.name,
+    });
+    if (!group) return reply.code(404).send({ error: "not found" });
+    reply.send({ group: withSchedule(group) });
   });
 
   app.patch("/api/groups/:id", async (req, reply) => {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { GroupWithSchedule } from "../types";
 import * as api from "../api";
 
 const TASK_PLACEHOLDER = `fill Email with {{name}}@example.com
@@ -35,24 +36,39 @@ function to12Hour(hhmm: string): string {
   return `${hour12}:${String(m).padStart(2, "0")} ${suffix}`;
 }
 
+/**
+ * Create *and* edit — one form, so the two can never drift apart in what
+ * they offer. Passing `group` prefills every field from the saved group and
+ * switches the save to an update, which is what makes a group stay exactly
+ * as configured until someone deliberately changes it.
+ */
 export function GroupModal({
   serverTimezone,
+  group,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   serverTimezone: string;
+  group?: GroupWithSchedule;
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [targetUrl, setTargetUrl] = useState("");
-  const [steps, setSteps] = useState("");
-  const [userCount, setUserCount] = useState(2);
-  const [names, setNames] = useState<string[]>(["", ""]);
-  const [startTime, setStartTime] = useState("17:00");
-  const [endTime, setEndTime] = useState("21:00");
-  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
-  const [autoFollow, setAutoFollow] = useState(true);
+  const editing = !!group;
+  // The stored steps always begin with the auto-injected "open {{url}}";
+  // don't show that back to the user as if they had typed it.
+  const initialSteps = group
+    ? group.steps.filter((s, i) => !(i === 0 && /^(open|go to|navigate to)\s+\{\{?url\}?\}$/i.test(s))).join("\n")
+    : "";
+
+  const [name, setName] = useState(group?.name ?? "");
+  const [targetUrl, setTargetUrl] = useState(group?.targetUrl ?? "");
+  const [steps, setSteps] = useState(initialSteps);
+  const [userCount, setUserCount] = useState(group?.userNames.length ?? 2);
+  const [names, setNames] = useState<string[]>(group?.userNames ?? ["", ""]);
+  const [startTime, setStartTime] = useState(group?.startTime ?? "17:00");
+  const [endTime, setEndTime] = useState(group?.endTime ?? "21:00");
+  const [days, setDays] = useState<number[]>(group?.days ?? [1, 2, 3, 4, 5]);
+  const [autoFollow, setAutoFollow] = useState(group?.enabled ?? true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,7 +116,7 @@ export function GroupModal({
 
     setSubmitting(true);
     try {
-      await api.createGroup({
+      const payload = {
         name,
         targetUrl,
         steps,
@@ -108,10 +124,12 @@ export function GroupModal({
         startTime,
         endTime,
         days,
-        timezone: serverTimezone,
+        timezone: group?.timezone ?? serverTimezone,
         enabled: autoFollow,
-      });
-      onCreated();
+      };
+      if (group) await api.updateGroup(group.id, payload);
+      else await api.createGroup(payload);
+      onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -123,7 +141,7 @@ export function GroupModal({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-panel modal-form" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>Create new group</span>
+          <span>{editing ? `Edit ${group!.name}` : "Create new group"}</span>
           <button type="button" onClick={onClose}>
             ✕
           </button>
