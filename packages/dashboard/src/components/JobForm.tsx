@@ -79,8 +79,9 @@ export function JobForm({ onCreated }: { onCreated: (jobId: string) => void }) {
         <div className="eyebrow">Users</div>
         <div className={csvFile ? "form-two-col" : "form-three-col"}>
           <div className="form-row">
-            <label>Per-user CSV (optional — a "name"/"email"/etc. column per user)</label>
+            <label>Per-user CSV (optional)</label>
             <input type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)} />
+            <div className="hint">A "name"/"email"/etc. column per user.</div>
           </div>
           <div className="form-row">
             <label>{csvFile ? "User count (from CSV rows)" : "Number of users"}</label>
@@ -118,10 +119,7 @@ export function JobForm({ onCreated }: { onCreated: (jobId: string) => void }) {
       <div className="form-section">
         <div className="eyebrow">Script</div>
         <div className="form-row">
-          <label>
-            Plain English, one step per line. Use {"{{columnName}}"} or {"{columnName}"} to pull a value from that
-            user's CSV row/name.
-          </label>
+          <label>Steps (plain English, one per line)</label>
           <textarea
             required
             rows={7}
@@ -130,9 +128,10 @@ export function JobForm({ onCreated }: { onCreated: (jobId: string) => void }) {
             placeholder={STEP_PLACEHOLDER}
           />
           <div className="hint">
-            Supported: click X · fill X with Y · type X · select X in Y · check/uncheck X · press KEY · wait for text
-            "X" · wait N seconds · wait for video · wait for element "selector" · screenshot · open URL (only needed
-            if you want to navigate somewhere other than the Target URL mid-script)
+            Use {"{{columnName}}"} or {"{columnName}"} to pull a value from that user's CSV row/name. Supported:
+            click X · fill X with Y · type X · select X in Y · check/uncheck X · press KEY · wait for text "X" ·
+            wait N seconds · wait for video · wait for element "selector" · screenshot · open URL (only needed if
+            you want to navigate somewhere other than the Target URL mid-script)
           </div>
         </div>
       </div>

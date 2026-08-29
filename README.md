@@ -1,4 +1,4 @@
-# QA Automation Platform
+# Browser Automation
 
 A self-hosted, web-based QA automation platform. Give it a target URL, a
 CSV of users (or just a headcount), and a plain-English step script, and it

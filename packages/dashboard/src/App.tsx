@@ -32,7 +32,7 @@ export default function App() {
       <header className="app-header">
         <div className="brand" onClick={goHome}>
           <span className="mark" />
-          <h1>QA Automation Platform</h1>
+          <h1>Browser Automation</h1>
         </div>
         <div className="system-status">
           <span className="dot" />
