@@ -69,6 +69,10 @@ export type ControlMessage =
 export type InputAction =
   | { kind: "click"; x: number; y: number }
   | { kind: "dblclick"; x: number; y: number }
+  | { kind: "rightclick"; x: number; y: number }
+  /** Hover only — lets menus and tooltips that open on mouseover behave the
+   * same way they would for someone actually sitting at the browser. */
+  | { kind: "move"; x: number; y: number }
   | { kind: "type"; text: string }
   | { kind: "key"; key: string }
   | { kind: "scroll"; deltaY: number };

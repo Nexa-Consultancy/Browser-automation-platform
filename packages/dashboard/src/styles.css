@@ -521,3 +521,24 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cur
   font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
   color: var(--text-dim); white-space: pre-wrap; word-break: break-word;
 }
+
+/* ---------- mouse takeover ---------- */
+
+/* A crosshair is the honest cursor here: you're aiming at a coordinate in
+   someone else's page, not clicking a control in this one. */
+.screencast-wrap img.screencast-live,
+.modal-screencast img.screencast-live { cursor: crosshair; }
+
+.modal-header-actions { display: flex; gap: 7px; align-items: center; }
+
+/* Control is armed — say so on the frame itself, so it's obvious why a
+   stray click just moved something. */
+.modal-screencast.controllable { border-color: var(--live); box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35); }
+.modal-screencast.controllable .vf-corner { opacity: 1; }
+
+button.control-on {
+  color: var(--live);
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.12);
+}
+button.control-on:hover:not(:disabled) { background: rgba(59, 130, 246, 0.2); }

@@ -13,6 +13,12 @@ import * as api from "../api";
 const TERMINAL = new Set(["completed", "stopped"]);
 export const LIVE_INTERACTIVE = new Set(["interactive", "failed"]);
 
+// Every status where the browser is still open and can therefore be driven
+// by hand. Wider than LIVE_INTERACTIVE on purpose: the moment you most need
+// the mouse is a run that is still "running" but stuck on something the
+// script can't get past, and that used to be exactly when input was refused.
+export const BROWSER_OPEN = new Set(["running", "waiting_video", "interactive", "failed"]);
+
 export function UserSessionBox({
   live,
   onInput,

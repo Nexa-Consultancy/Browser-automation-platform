@@ -4,7 +4,7 @@ import { applySessionEvent, initSessionLive, type SessionLive } from "../session
 import { useJobSocket } from "../useJobSocket";
 import * as api from "../api";
 import { StatusBadge } from "./StatusBadge";
-import { UserSessionBox, LIVE_INTERACTIVE } from "./UserSessionBox";
+import { UserSessionBox, LIVE_INTERACTIVE, BROWSER_OPEN } from "./UserSessionBox";
 import { ScreencastModal } from "./ScreencastModal";
 
 export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
@@ -129,7 +129,8 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
         <ScreencastModal
           userName={expanded.session.userName}
           frame={expanded.frame}
-          interactive={LIVE_INTERACTIVE.has(expanded.session.status)}
+          parked={LIVE_INTERACTIVE.has(expanded.session.status)}
+          live={BROWSER_OPEN.has(expanded.session.status)}
           onInput={(action) => handleInput(expanded.session.id, action)}
           onClose={() => setExpandedId(null)}
         />

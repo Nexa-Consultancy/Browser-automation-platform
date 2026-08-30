@@ -61,6 +61,12 @@ async function applyInput(page: Page, action: InputAction): Promise<void> {
     case "dblclick":
       await page.mouse.dblclick(action.x, action.y);
       return;
+    case "rightclick":
+      await page.mouse.click(action.x, action.y, { button: "right" });
+      return;
+    case "move":
+      await page.mouse.move(action.x, action.y);
+      return;
     case "type":
       await page.keyboard.type(action.text, { delay: 20 });
       return;
