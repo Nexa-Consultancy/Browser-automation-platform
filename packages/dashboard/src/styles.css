@@ -774,3 +774,44 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .tally.ok  { color: var(--success); }
 .tally.bad { color: var(--danger); }
 .tally.dim { color: var(--text-faint); }
+
+/* ---------- settings ---------- */
+
+.settings-grid { display: grid; gap: 16px; max-width: 900px; }
+.ok-banner {
+  background: rgba(6, 122, 78, 0.07); border: 1px solid rgba(6, 122, 78, 0.3);
+  color: var(--success); padding: 10px 12px; border-radius: 6px; font-size: 13px;
+}
+
+/* ---------- egress badge (top bar) ---------- */
+
+.egress-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 11.5px;
+  padding: 6px 11px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
+  max-width: 340px; overflow: hidden;
+}
+.egress-badge .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;
+}
+.egress-badge.proxied { border-color: rgba(29, 100, 216, 0.4); background: rgba(29, 100, 216, 0.07); }
+.egress-badge.proxied .dot { background: var(--live); }
+.egress-badge.bad { border-color: rgba(192, 38, 59, 0.35); color: var(--danger); }
+.egress-badge.bad .dot { background: var(--danger); }
+.egress-badge .dot.checking { background: var(--live); animation: pulse-soft 1.4s ease-in-out infinite; }
+.egress-badge .egress-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.egress-badge strong { color: var(--text); font-weight: 600; }
+.egress-place { color: var(--text-dim); }
+
+/* Bigger, more comfortable search — the old field was cramped. */
+.search-field input {
+  height: 44px; font-size: 14px; padding-left: 38px; border-radius: 8px;
+}
+.search-field .search-icon { font-size: 19px; left: 13px; }
+.filter-field input[type="date"] { height: 44px; }
+.filter-bar button { height: 44px; }
+
+@media (max-width: 640px) {
+  .egress-badge { max-width: 100%; order: 4; width: 100%; justify-content: center; }
+}

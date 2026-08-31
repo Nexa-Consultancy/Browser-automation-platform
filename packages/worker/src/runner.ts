@@ -14,6 +14,7 @@ import { subscribeControl } from "./controlListener.js";
 import { startScreencast } from "./screencast.js";
 import { executeStep } from "./stepExecutor.js";
 import { emitEvent } from "./events.js";
+import { publishAlert } from "./alert.js";
 
 const MAX_VIDEO_WAIT_MS = Number(process.env.MAX_VIDEO_WAIT_MS ?? 10_800_000);
 
@@ -198,6 +199,18 @@ export async function runSession(browser: Browser, job: Job, session: SessionRow
         await updateSessionStatus(session.id, "failed", { error: stepError });
         await emitEvent(session.id, job.id, "step_failed", { index: cursor, error: stepError });
         await emitEvent(session.id, job.id, "status_change", { status: "failed" });
+        publishAlert({
+          level: "ERROR",
+          source: "worker/step",
+          message: `Step ${cursor + 1} failed for ${session.userName}: ${stepError}`,
+          errorTrace: `Step: ${step.raw}
+
+${stepError}`,
+          jobId: job.id,
+          sessionId: session.id,
+          userName: session.userName,
+          groupName: job.name,
+        });
         cursor += 1;
         await waitForMoreStepsOrStop();
         if (!stopped) {
@@ -230,6 +243,16 @@ export async function runSession(browser: Browser, job: Job, session: SessionRow
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    publishAlert({
+      level: "ERROR",
+      source: "worker/session",
+      message: `Session crashed for ${session.userName}: ${message}`,
+      errorTrace: err instanceof Error ? (err.stack ?? message) : message,
+      jobId: job.id,
+      sessionId: session.id,
+      userName: session.userName,
+      groupName: job.name,
+    });
     await updateSessionStatus(session.id, "failed", { error: message, finishedAt: true });
     await emitEvent(session.id, job.id, "step_failed", { index: cursor, error: message });
     await emitEvent(session.id, job.id, "status_change", { status: "failed" });

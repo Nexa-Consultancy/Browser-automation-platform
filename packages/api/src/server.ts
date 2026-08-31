@@ -5,10 +5,12 @@ import websocketPlugin from "@fastify/websocket";
 import { migrate } from "@automation/db";
 import { groupRoutes } from "./routes/groups.js";
 import { historyRoutes } from "./routes/history.js";
+import { systemRoutes } from "./routes/system.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { registerWs } from "./ws.js";
 import { startGroupScheduler } from "./scheduler.js";
+import { startAlertListener } from "./alertListener.js";
 
 async function main() {
   await migrate();
@@ -24,6 +26,7 @@ async function main() {
   await app.register(jobRoutes);
   await app.register(groupRoutes);
   await app.register(historyRoutes);
+  await app.register(systemRoutes);
   await app.register(sessionRoutes);
   await app.register(registerWs);
 
@@ -35,6 +38,11 @@ async function main() {
   // out), so exactly one clock ticks — and the Postgres occurrence claim
   // keeps even that assumption from mattering if it ever stops holding.
   // See packages/api/src/scheduler.ts.
+  startAlertListener({
+    info: (msg) => app.log.info(msg),
+    error: (msg) => app.log.error(msg),
+  });
+
   startGroupScheduler({
     info: (msg) => app.log.info(msg),
     error: (msg) => app.log.error(msg),

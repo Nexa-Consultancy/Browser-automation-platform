@@ -83,3 +83,33 @@ ALTER TABLE groups ADD COLUMN IF NOT EXISTS active_job_manual BOOLEAN NOT NULL D
 -- How many minutes before start_time the run should actually begin, so the
 -- browsers are logged in and settled before the event itself starts.
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS lead_minutes INT NOT NULL DEFAULT 0;
+
+-- Admin-configurable settings (proxy, SMTP, browser defaults). Key/value
+-- rather than columns so adding a setting never needs a migration.
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Everything worth telling someone about: failures, timeouts, and the
+-- lifecycle events around them. Carries enough context (which user, which
+-- group, which run) that an alert email can say where the problem happened
+-- rather than just that one did.
+CREATE TABLE IF NOT EXISTS system_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  level TEXT NOT NULL DEFAULT 'INFO',
+  source TEXT NOT NULL DEFAULT 'system',
+  message TEXT NOT NULL,
+  error_trace TEXT,
+  job_id UUID,
+  session_id UUID,
+  user_name TEXT,
+  group_name TEXT,
+  alert_sent BOOLEAN NOT NULL DEFAULT false,
+  alert_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level, created_at DESC);

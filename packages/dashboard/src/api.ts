@@ -143,3 +143,56 @@ export async function getHistory(): Promise<{
 }> {
   return json(await fetch(`${API_BASE}/api/history`));
 }
+
+// ---------- settings / logs / egress ----------
+
+export interface SystemLog {
+  id: string;
+  level: "INFO" | "WARN" | "ERROR";
+  source: string;
+  message: string;
+  errorTrace: string | null;
+  jobId: string | null;
+  sessionId: string | null;
+  userName: string | null;
+  groupName: string | null;
+  alertSent: boolean;
+  alertError: string | null;
+  createdAt: string;
+}
+
+export interface EgressInfo {
+  ip: string | null;
+  city: string;
+  region: string;
+  country: string;
+  proxied: boolean;
+  error?: string;
+}
+
+export async function getSettings(): Promise<{ settings: Record<string, string>; serverTimezone: string }> {
+  return json(await fetch(`${API_BASE}/api/settings`));
+}
+
+export async function saveSettings(patch: Record<string, string>): Promise<{ settings: Record<string, string> }> {
+  return json(
+    await fetch(`${API_BASE}/api/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  );
+}
+
+export async function testEmail(): Promise<{ ok: boolean; error?: string }> {
+  return json(await fetch(`${API_BASE}/api/settings/test-email`, { method: "POST" }));
+}
+
+export async function getLogs(level?: string): Promise<{ logs: SystemLog[] }> {
+  const q = level ? `?level=${encodeURIComponent(level)}` : "";
+  return json(await fetch(`${API_BASE}/api/logs${q}`));
+}
+
+export async function getEgressInfo(): Promise<EgressInfo> {
+  return json(await fetch(`${API_BASE}/api/system/egress-info`));
+}

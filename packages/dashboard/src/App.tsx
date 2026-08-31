@@ -4,11 +4,14 @@ import { JobList } from "./components/JobList";
 import { JobView } from "./components/JobView";
 import { GroupList } from "./components/GroupList";
 import { HistoryView } from "./components/HistoryView";
+import { SettingsView } from "./components/SettingsView";
+import { EgressBadge } from "./components/EgressBadge";
 
 type Route =
   | { view: "runs" }
   | { view: "groups" }
   | { view: "history" }
+  | { view: "settings" }
   | { view: "job"; jobId: string };
 
 // Groups is the landing view: scheduled automations are the main way this
@@ -19,6 +22,7 @@ function routeFromHash(): Route {
   if (job) return { view: "job", jobId: job[1] };
   if (location.hash === "#/runs") return { view: "runs" };
   if (location.hash === "#/history") return { view: "history" };
+  if (location.hash === "#/settings") return { view: "settings" };
   return { view: "groups" };
 }
 
@@ -66,15 +70,22 @@ export default function App() {
           >
             View more
           </button>
+          <button
+            className={route.view === "settings" ? "active" : ""}
+            onClick={() => go("#/settings")}
+          >
+            Settings
+          </button>
         </nav>
-        <div className="system-status">
-          <span className="dot" />
-          system ready
-        </div>
+        <EgressBadge />
       </header>
 
       {route.view === "job" ? (
         <JobView jobId={route.jobId} onBack={() => go("")} />
+      ) : route.view === "settings" ? (
+        <div className="container">
+          <SettingsView />
+        </div>
       ) : route.view === "history" ? (
         <div className="container">
           <HistoryView onOpenJob={openJob} />

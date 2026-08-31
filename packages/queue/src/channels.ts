@@ -4,6 +4,10 @@
 // number of workers can subscribe to the same channels.
 
 export const controlChannel = (sessionId: string) => `control:session:${sessionId}`;
+
+/** Failures the worker wants someone told about. The worker has no SMTP
+ * config (and shouldn't), so it publishes here and the API sends the mail. */
+export const ALERT_CHANNEL = "alerts";
 export const eventsChannel = (jobId: string) => `events:job:${jobId}`;
 export const screencastChannel = (sessionId: string) => `screencast:session:${sessionId}`;
 
