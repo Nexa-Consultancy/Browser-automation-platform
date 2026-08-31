@@ -44,6 +44,24 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState("");
+  const [createdOn, setCreatedOn] = useState(""); // "YYYY-MM-DD", empty = any
+
+  const filtered = groups.filter((g) => {
+    const q = query.trim().toLowerCase();
+    const matchesText =
+      !q ||
+      g.name.toLowerCase().includes(q) ||
+      g.userNames.some((n) => n.toLowerCase().includes(q));
+    // Compare the creation date as it reads in the group's own zone, so a
+    // group made late in the evening doesn't file itself under tomorrow the
+    // way a raw UTC timestamp would. "en-CA" formats as YYYY-MM-DD, which is
+    // exactly what a date input gives back.
+    const matchesDate =
+      !createdOn ||
+      new Date(g.createdAt).toLocaleDateString("en-CA", { timeZone: g.timezone }) === createdOn;
+    return matchesText && matchesDate;
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -84,10 +102,10 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
     <div>
       <div className="job-toolbar">
         <div className="job-toolbar-title">
-          <h2>Scheduled groups</h2>
+          <h2>Automations</h2>
           {serverTimezone && (
             <span className="hint">
-              server region {serverTimezone}
+              all times {serverTimezone}
               {groups[0] ? ` · now ${to12Hour(groups[0].schedule.localTime)}` : ""}
             </span>
           )}
@@ -99,16 +117,57 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
         </div>
       </div>
 
+      {groups.length > 0 && (
+        <div className="filter-bar">
+          <div className="search-field">
+            <span className="search-icon">⌕</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by group name or user name…"
+            />
+          </div>
+          <div className="filter-field">
+            <label htmlFor="created-filter">Created on</label>
+            <input
+              id="created-filter"
+              type="date"
+              value={createdOn}
+              onChange={(e) => setCreatedOn(e.target.value)}
+            />
+          </div>
+          {(query || createdOn) && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setCreatedOn("");
+              }}
+            >
+              Clear
+            </button>
+          )}
+          <span className="filter-count">
+            {filtered.length} of {groups.length}
+          </span>
+        </div>
+      )}
+
       {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
 
       {loaded && groups.length === 0 && (
         <div className="empty-state">
-          No groups yet — create one and the server will run it on schedule, on its own.
+          No automations yet — create a group and the server runs it on schedule, on its own.
         </div>
       )}
 
+      {loaded && groups.length > 0 && filtered.length === 0 && (
+        <div className="empty-state">No group matches that search.</div>
+      )}
+
       <div className="group-list">
-        {groups.map((g) => {
+        {filtered.map((g) => {
           const live = !!g.activeJobId;
           // A window fires once. If this occurrence has already run and was
           // stopped, we're inside the window but nothing is going to start —
@@ -135,7 +194,15 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                 </div>
                 <div className="group-window">
                   <span className="group-days">{describeDays(g.days)}</span>
-                  {to12Hour(g.startTime)} → {to12Hour(g.endTime)}
+                  {to12Hour(g.schedule.effectiveStart)} → {to12Hour(g.endTime)}
+                  {g.leadMinutes > 0 && (
+                    <span
+                      className="group-lead"
+                      title={`Starts ${g.leadMinutes} min before the ${to12Hour(g.startTime)} event`}
+                    >
+                      {g.leadMinutes}m early
+                    </span>
+                  )}
                   <span className="tz">{g.timezone}</span>
                 </div>
               </div>
@@ -146,14 +213,6 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                 <span>
                   {g.userNames.length} user{g.userNames.length === 1 ? "" : "s"}: {g.userNames.join(", ")}
                 </span>
-              </div>
-
-              <div className="group-task">
-                <div className="group-task-head">
-                  Default prompt for this group · {g.steps.length} step{g.steps.length === 1 ? "" : "s"}
-                  <span className="group-task-note">runs the same every time until you edit it</span>
-                </div>
-                <pre>{g.steps.join("\n")}</pre>
               </div>
 
               <div className="group-countdown">

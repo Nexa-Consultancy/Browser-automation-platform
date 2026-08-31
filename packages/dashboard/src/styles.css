@@ -559,3 +559,61 @@ button.control-on:hover:not(:disabled) { background: rgba(59, 130, 246, 0.2); }
   color: var(--live); border: 1px solid rgba(59, 130, 246, 0.4);
   border-radius: 999px; padding: 1px 7px;
 }
+
+/* ---------- search + filters ---------- */
+
+.filter-bar {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px; padding: 11px 13px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+}
+.search-field { position: relative; flex: 1 1 260px; min-width: 200px; }
+.search-field .search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--text-faint); font-size: 15px; pointer-events: none;
+}
+.search-field input { padding-left: 29px; }
+.search-field input[type="search"]::-webkit-search-cancel-button { filter: invert(0.6); cursor: pointer; }
+.filter-field { display: grid; gap: 5px; }
+.filter-field label { margin: 0; }
+.filter-field input[type="date"] {
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: 12.5px;
+}
+.filter-field input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+.filter-count {
+  margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+  white-space: nowrap; padding-bottom: 9px;
+}
+
+@media (max-width: 640px) {
+  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-count { margin-left: 0; padding-bottom: 0; }
+}
+
+/* ---------- reveal the prompt (hidden by default) ---------- */
+
+.reveal-btn { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+.reveal-btn .eye { font-size: 13px; line-height: 1; }
+
+/* ---------- per-session detail toggle ---------- */
+
+/* The live picture is the point of a session card; steps and log are the
+   "something looks wrong" view, so they start closed. */
+.detail-toggle {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  justify-content: flex-start; background: transparent; border-color: var(--line-soft);
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);
+}
+.detail-toggle:hover:not(:disabled) { color: var(--live); }
+.detail-toggle .chev { font-size: 9px; opacity: 0.75; }
+
+/* ---------- live keyboard passthrough ---------- */
+
+.live-keys { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.live-keys-input {
+  flex: 1 1 180px; min-width: 140px;
+  font-family: var(--font-mono); font-size: 12.5px;
+}
+.live-keys-input:focus { border-color: var(--live); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15); }
+.live-keys-buttons { display: flex; gap: 5px; flex-shrink: 0; }

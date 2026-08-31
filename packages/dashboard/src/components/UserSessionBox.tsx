@@ -30,6 +30,10 @@ export function UserSessionBox({
 }) {
   const { session, steps, frame, log, video, failedIndices } = live;
   const [followup, setFollowup] = useState("");
+  // Collapsed by default: the point of this box is the live picture. The
+  // step list and event log are for when something looks wrong, not for
+  // every glance at a wall of running sessions.
+  const [showDetail, setShowDetail] = useState(false);
   const [busy, setBusy] = useState(false);
   const done = session.status === "completed";
   const stopped = TERMINAL.has(session.status);
@@ -82,22 +86,46 @@ export function UserSessionBox({
         </div>
       )}
 
-      <StepTimeline steps={steps} currentIndex={session.currentStepIndex} failedIndices={failedIndices} done={done} />
+      <button
+        type="button"
+        className="detail-toggle"
+        onClick={() => setShowDetail((v) => !v)}
+        aria-expanded={showDetail}
+      >
+        <span className="chev">{showDetail ? "▲" : "▼"}</span>
+        {showDetail ? "Hide steps & log" : `Steps & log · ${session.currentStepIndex + 1}/${session.totalSteps}`}
+      </button>
 
-      <div className="event-log">
-        {log.length === 0 && <div className="entry">waiting to start…</div>}
-        {log.map((entry, i) => (
-          <div className={`entry ${entry.err ? "err" : ""}`} key={i}>
-            [{entry.ts}] {entry.text}
+      {showDetail && (
+        <>
+          <StepTimeline
+            steps={steps}
+            currentIndex={session.currentStepIndex}
+            failedIndices={failedIndices}
+            done={done}
+          />
+
+          <div className="event-log">
+            {log.length === 0 && <div className="entry">waiting to start…</div>}
+            {log.map((entry, i) => (
+              <div className={`entry ${entry.err ? "err" : ""}`} key={i}>
+                [{entry.ts}] {entry.text}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       {session.error && <div className="error-banner">{session.error}</div>}
 
       <div className="session-controls">
-        <button className="danger" disabled={busy || stopped} onClick={stop}>
-          Stop
+        <button
+          className="danger"
+          disabled={busy || stopped}
+          onClick={stop}
+          title={`Close only ${session.userName}'s browser — the other users keep running`}
+        >
+          Stop {session.userName}
         </button>
       </div>
 

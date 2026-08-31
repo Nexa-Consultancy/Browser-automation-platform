@@ -82,6 +82,10 @@ export function GroupModal({
   const [days, setDays] = useState<number[]>(group?.days ?? [1, 2, 3, 4, 5]);
   const [leadMinutes, setLeadMinutes] = useState(group?.leadMinutes ?? 5);
   const [autoFollow, setAutoFollow] = useState(group?.enabled ?? true);
+  // On create you have to write the prompt, so it starts open. On an
+  // existing group it stays hidden until deliberately revealed — the prompt
+  // is the private part of a group and shouldn't sit on screen by default.
+  const [showPrompt, setShowPrompt] = useState(!group);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -221,7 +225,13 @@ export function GroupModal({
 
           <div className="form-section">
             <div className="eyebrow">Task</div>
-            <div className="form-row">
+            {editing && (
+              <button type="button" className="reveal-btn" onClick={() => setShowPrompt((v) => !v)}>
+                <span className="eye">{showPrompt ? "🙈" : "👁"}</span>
+                {showPrompt ? "Hide prompt" : "View prompt"}
+              </button>
+            )}
+            <div className="form-row" hidden={!showPrompt}>
               <label>What this group should do (one step per line)</label>
               <textarea
                 required

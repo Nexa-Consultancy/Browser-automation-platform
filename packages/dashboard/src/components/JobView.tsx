@@ -54,7 +54,7 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
 
   async function stopAll() {
     if (!job) return;
-    if (!confirm("Stop all sessions and close every browser for this job?")) return;
+    if (!confirm(`Stop all ${sessions.length} user(s) and close every browser in this run?`)) return;
     setBusy(true);
     try {
       await api.stopAll(job.id);
@@ -93,8 +93,13 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
           <span className="hint">{job.targetUrl}</span>
         </div>
         <div className="job-toolbar-actions">
-          <button className="danger" disabled={busy} onClick={stopAll}>
-            Stop all
+          <button
+            className="danger"
+            disabled={busy}
+            onClick={stopAll}
+            title="Close every user's browser in this run"
+          >
+            Stop all users ({sessions.length})
           </button>
         </div>
       </div>
