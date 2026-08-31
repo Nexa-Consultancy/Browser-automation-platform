@@ -9,6 +9,10 @@ wait for video`;
 
 const MAX_USERS = 200;
 
+// Common head-starts. "On time" is kept as an explicit choice rather than an
+// empty field so the default is a decision, not an oversight.
+const LEAD_CHOICES = [0, 5, 10, 15, 30];
+
 // Monday-first for display; the values are 0 = Sunday ... 6 = Saturday,
 // which is what the server stores and what Date#getDay returns.
 const DAYS: { value: number; label: string }[] = [
@@ -25,6 +29,14 @@ const DAYS: { value: number; label: string }[] = [
  * change to the user count (both directions). */
 function resizeNames(names: string[], count: number): string[] {
   return Array.from({ length: count }, (_, i) => names[i] ?? "");
+}
+
+/** Shift an "HH:MM" by N minutes, wrapping over midnight. */
+function shiftHhMm(hhmm: string, deltaMinutes: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  const total = (((h * 60 + m + deltaMinutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
 /** "17:00" -> "5:00 PM", for the plain-language echo under the time fields. */
@@ -68,6 +80,7 @@ export function GroupModal({
   const [startTime, setStartTime] = useState(group?.startTime ?? "17:00");
   const [endTime, setEndTime] = useState(group?.endTime ?? "21:00");
   const [days, setDays] = useState<number[]>(group?.days ?? [1, 2, 3, 4, 5]);
+  const [leadMinutes, setLeadMinutes] = useState(group?.leadMinutes ?? 5);
   const [autoFollow, setAutoFollow] = useState(group?.enabled ?? true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +136,7 @@ export function GroupModal({
         userNames: filled,
         startTime,
         endTime,
+        leadMinutes,
         days,
         timezone: group?.timezone ?? serverTimezone,
         enabled: autoFollow,
@@ -239,10 +253,22 @@ export function GroupModal({
               </div>
             </div>
 
-            <div className="form-two-col" style={{ marginTop: 14 }}>
+            <div className="form-three-col" style={{ marginTop: 14 }}>
               <div className="form-row">
-                <label>Start</label>
+                <label>Event time</label>
                 <input type="time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+                <div className="hint">When the thing you're automating actually happens.</div>
+              </div>
+              <div className="form-row">
+                <label>Start early by</label>
+                <select value={leadMinutes} onChange={(e) => setLeadMinutes(Number(e.target.value))}>
+                  {LEAD_CHOICES.map((m) => (
+                    <option value={m} key={m}>
+                      {m === 0 ? "On time" : `${m} minutes before`}
+                    </option>
+                  ))}
+                </select>
+                <div className="hint">Browsers open early so they're logged in before it starts.</div>
               </div>
               <div className="form-row">
                 <label>End</label>
@@ -250,8 +276,12 @@ export function GroupModal({
               </div>
             </div>
             <div className="hint">
-              Active from <strong>{to12Hour(startTime)}</strong> to <strong>{to12Hour(endTime)}</strong>
-              {crossesMidnight ? " the next morning" : ""} on each selected day — {serverTimezone} (server region).
+              Begins at <strong>{to12Hour(shiftHhMm(startTime, -leadMinutes))}</strong>
+              {leadMinutes > 0 && <> — {leadMinutes} min before the {to12Hour(startTime)} event</>} and stops at{" "}
+              <strong>{to12Hour(endTime)}</strong>
+              {crossesMidnight ? " the next morning" : ""}, on each selected day.
+              <br />
+              All times are <strong>{serverTimezone}</strong>.
             </div>
 
             <label className="switch-row">

@@ -90,7 +90,11 @@ export interface Group {
   targetUrl: string;
   steps: string[]; // same plain-English step language as a manual job
   userNames: string[]; // one entry per user; length IS the user count
+  /** The time the thing you're automating actually happens, as typed. */
   startTime: string; // "HH:MM", 24-hour, local to `timezone`
+  /** Start this many minutes BEFORE startTime, so the browsers are up and
+   * logged in before the event begins. 0 = start exactly on time. */
+  leadMinutes: number;
   endTime: string; // "HH:MM"; earlier than startTime means it crosses midnight
   /** Weekdays the window opens on: 0 = Sunday … 6 = Saturday. */
   days: number[];
@@ -114,6 +118,8 @@ export interface Group {
 /** Live scheduling read-out the API computes for the dashboard. */
 export interface GroupSchedule {
   inWindow: boolean;
+  /** startTime minus leadMinutes, "HH:MM" — when it will really begin. */
+  effectiveStart: string;
   /** The occurrence in progress right now ("YYYY-MM-DD@HH:MM"), or null
    * when outside the window. Compare with the group's lastOccurrenceKey to
    * tell "about to start" apart from "already ran and was stopped". */

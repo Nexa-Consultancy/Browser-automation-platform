@@ -542,3 +542,20 @@ button.control-on {
   background: rgba(59, 130, 246, 0.12);
 }
 button.control-on:hover:not(:disabled) { background: rgba(59, 130, 246, 0.2); }
+
+/* ---------- group prompt (always visible: it's what the group *is*) ---------- */
+
+.group-task-head {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-dim);
+  margin-bottom: 5px;
+}
+.group-task-note { color: var(--text-faint); font-size: 10.5px; }
+.group-task pre { max-height: 132px; overflow-y: auto; }
+
+/* Lead time — the gap between the event and when we actually start. */
+.group-lead {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em;
+  color: var(--live); border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 999px; padding: 1px 7px;
+}

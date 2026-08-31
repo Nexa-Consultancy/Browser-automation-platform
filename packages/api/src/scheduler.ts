@@ -1,9 +1,11 @@
 import { claimGroupOccurrence, getJob, listGroups, releaseGroupRun } from "@automation/db";
 import {
   buildNamedUsers,
+  effectiveStartMinutes,
   parseHhMm,
   windowStateAt,
   zonedNow,
+  formatHhMm,
   type Group,
   type JobStatus,
 } from "@automation/shared";
@@ -72,7 +74,10 @@ export function startGroupScheduler(log: Logger): () => void {
 
 async function evaluateGroup(group: Group, log: Logger): Promise<void> {
   const now = zonedNow(group.timezone);
-  const state = windowStateAt(parseHhMm(group.startTime), parseHhMm(group.endTime), now, group.days);
+  // The lead is applied here: a group set for 14:00 with a 5-minute lead
+  // has its window open at 13:55, so the browsers are up before the event.
+  const start = effectiveStartMinutes(parseHhMm(group.startTime), group.leadMinutes);
+  const state = windowStateAt(start, parseHhMm(group.endTime), now, group.days);
 
   // Reap a run that already ended on its own — someone hit Stop from the
   // run view, or every session failed. For a *scheduled* run, consuming the
@@ -129,7 +134,9 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
       return;
     }
     log.info(
-      `group ${group.name}: window ${group.startTime}–${group.endTime} ${group.timezone} opened — started job ${job.id} for ${users.length} user(s)`,
+      `group ${group.name}: window opened ${formatHhMm(start)}–${group.endTime} ${group.timezone}` +
+        `${group.leadMinutes ? ` (${group.leadMinutes}m before ${group.startTime})` : ""}` +
+        ` — started job ${job.id} for ${users.length} user(s)`,
     );
     return;
   }

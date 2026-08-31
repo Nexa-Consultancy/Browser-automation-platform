@@ -78,7 +78,10 @@ export interface Group {
   targetUrl: string;
   steps: string[];
   userNames: string[];
+  /** The time the thing you're automating actually happens, as typed. */
   startTime: string; // "HH:MM", 24-hour, local to `timezone`
+  /** Start this many minutes BEFORE startTime. 0 = exactly on time. */
+  leadMinutes: number;
   endTime: string; // earlier than startTime means the window crosses midnight
   /** Weekdays the window opens on: 0 = Sunday … 6 = Saturday. */
   days: number[];
@@ -98,6 +101,8 @@ export interface Group {
 
 export interface GroupSchedule {
   inWindow: boolean;
+  /** startTime minus leadMinutes, "HH:MM" — when it will really begin. */
+  effectiveStart: string;
   /** The occurrence in progress right now ("YYYY-MM-DD@HH:MM"), or null
    * when outside the window. Compare with the group's lastOccurrenceKey to
    * tell "about to start" apart from "already ran and was stopped". */

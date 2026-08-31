@@ -11,6 +11,7 @@ import {
   isValidTimezone,
   parseHhMm,
   shiftDate,
+  effectiveStartMinutes,
   weekdayOf,
   windowStateAt,
   zonedNow,
@@ -128,6 +129,32 @@ describe("windowStateAt — weekday selection", () => {
     assert.equal(windowStateAt(s, e, { date: "2026-09-04", minutes: parseHhMm("23:00") }, [5]).inWindow, true);
     assert.equal(windowStateAt(s, e, { date: SAT, minutes: parseHhMm("01:00") }, [5]).inWindow, true);
     assert.equal(windowStateAt(s, e, { date: SAT, minutes: parseHhMm("23:00") }, [5]).inWindow, false);
+  });
+});
+
+describe("effectiveStartMinutes — the start-early lead", () => {
+  it("moves the start earlier by the lead", () => {
+    assert.equal(effectiveStartMinutes(parseHhMm("14:00"), 5), parseHhMm("13:55"));
+    assert.equal(effectiveStartMinutes(parseHhMm("14:00"), 30), parseHhMm("13:30"));
+  });
+
+  it("a zero lead starts exactly on time", () => {
+    assert.equal(effectiveStartMinutes(parseHhMm("14:00"), 0), parseHhMm("14:00"));
+  });
+
+  it("wraps backwards over midnight", () => {
+    assert.equal(effectiveStartMinutes(parseHhMm("00:05"), 10), parseHhMm("23:55"));
+    assert.equal(effectiveStartMinutes(parseHhMm("00:00"), 1), parseHhMm("23:59"));
+  });
+
+  it("opens the window early end to end", () => {
+    // A 14:00 event with a 10-minute lead is in-window at 13:50, not 13:49.
+    const start = effectiveStartMinutes(parseHhMm("14:00"), 10);
+    const end = parseHhMm("16:00");
+    const at = (hhmm: string) => windowStateAt(start, end, { date: "2026-08-31", minutes: parseHhMm(hhmm) });
+    assert.equal(at("13:49").inWindow, false);
+    assert.equal(at("13:50").inWindow, true);
+    assert.equal(at("14:00").inWindow, true);
   });
 });
 

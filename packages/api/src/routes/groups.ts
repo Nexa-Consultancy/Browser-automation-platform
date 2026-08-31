@@ -12,6 +12,7 @@ import {
 import {
   ALL_DAYS,
   buildNamedUsers,
+  effectiveStartMinutes,
   formatHhMm,
   isValidTimezone,
   parseHhMm,
@@ -32,6 +33,7 @@ interface CreateGroupBody {
   userNames?: string[];
   startTime?: string;
   endTime?: string;
+  leadMinutes?: number;
   days?: number[];
   timezone?: string;
   enabled?: boolean;
@@ -42,11 +44,15 @@ interface CreateGroupBody {
  * server's clock — the only clock that actually fires these. */
 function withSchedule(group: Group): GroupWithSchedule {
   const now = zonedNow(group.timezone);
-  const state = windowStateAt(parseHhMm(group.startTime), parseHhMm(group.endTime), now, group.days);
+  // Schedule against the lead-adjusted start, not the time the user typed —
+  // that's the whole point of the lead.
+  const start = effectiveStartMinutes(parseHhMm(group.startTime), group.leadMinutes);
+  const state = windowStateAt(start, parseHhMm(group.endTime), now, group.days);
   return {
     ...group,
     schedule: {
       inWindow: state.inWindow,
+      effectiveStart: formatHhMm(start),
       occurrenceKey: state.occurrenceKey,
       minutesUntilStart: state.minutesUntilStart,
       minutesUntilEnd: state.minutesUntilEnd,
@@ -62,6 +68,7 @@ interface ParsedGroup {
   userNames: string[];
   startTime: string;
   endTime: string;
+  leadMinutes: number;
   days: number[];
   timezone: string;
   enabled: boolean;
@@ -98,6 +105,11 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
   }
   if (startTime === endTime) return { error: "start time and end time must differ" };
 
+  const leadMinutes = Math.trunc(Number(body.leadMinutes ?? 0));
+  if (!Number.isFinite(leadMinutes) || leadMinutes < 0 || leadMinutes > 120) {
+    return { error: "start-early lead must be between 0 and 120 minutes" };
+  }
+
   // Weekdays, 0 = Sunday … 6 = Saturday. Deduped and sorted so the stored
   // value is canonical however the checkboxes were clicked.
   const days = [...new Set(Array.isArray(body.days) ? body.days : ALL_DAYS)]
@@ -117,6 +129,7 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
       userNames,
       startTime,
       endTime,
+      leadMinutes,
       days,
       timezone,
       enabled: body.enabled !== false,
@@ -238,7 +251,8 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     // manual "Join now" never claimed the occurrence, so stopping it must
     // leave the day's scheduled run still to come.
     const now = zonedNow(group.timezone);
-    const state = windowStateAt(parseHhMm(group.startTime), parseHhMm(group.endTime), now, group.days);
+    const start = effectiveStartMinutes(parseHhMm(group.startTime), group.leadMinutes);
+    const state = windowStateAt(start, parseHhMm(group.endTime), now, group.days);
     await releaseGroupRun(group.id, group.activeRunIsManual ? null : state.occurrenceKey, true);
     reply.send({ ok: true, stopped });
   });

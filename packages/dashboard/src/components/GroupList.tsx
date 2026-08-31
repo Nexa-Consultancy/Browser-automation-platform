@@ -148,12 +148,13 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                 </span>
               </div>
 
-              <details className="group-task">
-                <summary>
-                  Task · {g.steps.length} step{g.steps.length === 1 ? "" : "s"}
-                </summary>
+              <div className="group-task">
+                <div className="group-task-head">
+                  Default prompt for this group · {g.steps.length} step{g.steps.length === 1 ? "" : "s"}
+                  <span className="group-task-note">runs the same every time until you edit it</span>
+                </div>
                 <pre>{g.steps.join("\n")}</pre>
-              </details>
+              </div>
 
               <div className="group-countdown">
                 {live && g.activeRunIsManual

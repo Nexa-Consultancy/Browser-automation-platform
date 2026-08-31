@@ -79,3 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_group_id ON jobs(group_id);
 -- Groups created before weekday selection / manual-run tracking existed.
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS days JSONB NOT NULL DEFAULT '[0,1,2,3,4,5,6]';
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS active_job_manual BOOLEAN NOT NULL DEFAULT false;
+
+-- How many minutes before start_time the run should actually begin, so the
+-- browsers are logged in and settled before the event itself starts.
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS lead_minutes INT NOT NULL DEFAULT 0;

@@ -9,6 +9,7 @@ interface GroupDbRow {
   user_names: string[];
   start_time: string;
   end_time: string;
+  lead_minutes: number;
   days: number[];
   timezone: string;
   enabled: boolean;
@@ -29,6 +30,7 @@ function toGroup(r: GroupDbRow): Group {
     userNames: r.user_names,
     startTime: r.start_time,
     endTime: r.end_time,
+    leadMinutes: r.lead_minutes,
     days: r.days,
     timezone: r.timezone,
     enabled: r.enabled,
@@ -48,13 +50,14 @@ export async function createGroup(input: {
   userNames: string[];
   startTime: string;
   endTime: string;
+  leadMinutes: number;
   days: number[];
   timezone: string;
   enabled: boolean;
 }): Promise<Group> {
   const { rows } = await pool.query<GroupDbRow>(
-    `INSERT INTO groups (name, target_url, steps, user_names, start_time, end_time, days, timezone, enabled)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7::jsonb, $8, $9)
+    `INSERT INTO groups (name, target_url, steps, user_names, start_time, end_time, lead_minutes, days, timezone, enabled)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8::jsonb, $9, $10)
      RETURNING *`,
     [
       input.name,
@@ -63,6 +66,7 @@ export async function createGroup(input: {
       JSON.stringify(input.userNames),
       input.startTime,
       input.endTime,
+      input.leadMinutes,
       JSON.stringify(input.days),
       input.timezone,
       input.enabled,
@@ -89,6 +93,7 @@ export async function updateGroup(
     userNames: string[];
     startTime: string;
     endTime: string;
+    leadMinutes: number;
     days: number[];
     timezone: string;
     enabled: boolean;
@@ -97,7 +102,8 @@ export async function updateGroup(
   const { rows } = await pool.query<GroupDbRow>(
     `UPDATE groups
         SET name = $2, target_url = $3, steps = $4::jsonb, user_names = $5::jsonb,
-            start_time = $6, end_time = $7, days = $8::jsonb, timezone = $9, enabled = $10
+            start_time = $6, end_time = $7, days = $8::jsonb, timezone = $9, enabled = $10,
+            lead_minutes = $11
       WHERE id = $1
       RETURNING *`,
     [
@@ -111,6 +117,7 @@ export async function updateGroup(
       JSON.stringify(input.days),
       input.timezone,
       input.enabled,
+      input.leadMinutes,
     ],
   );
   return rows[0] ? toGroup(rows[0]) : null;

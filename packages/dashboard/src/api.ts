@@ -75,8 +75,9 @@ export interface CreateGroupInput {
   targetUrl: string;
   steps: string;
   userNames: string[];
-  startTime: string; // "HH:MM"
+  startTime: string; // "HH:MM" — when the thing you're automating happens
   endTime: string; // "HH:MM"
+  leadMinutes: number; // start this many minutes before startTime
   days: number[]; // 0 = Sunday ... 6 = Saturday
   timezone: string;
   enabled: boolean; // "follow this schedule automatically"

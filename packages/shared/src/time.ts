@@ -116,6 +116,19 @@ function minutesUntilNextStart(startMinutes: number, now: ZonedNow, days: number
   return -1;
 }
 
+/**
+ * The minute the automation should actually begin.
+ *
+ * People schedule against the time the *event* happens ("the class is at
+ * 2:00"), but the browsers need to be up and settled before it — logging in
+ * and joining takes time. So a group stores the event time the user typed
+ * and a lead, and everything downstream schedules against this instead.
+ * Wraps backwards over midnight: 00:05 with a 10-minute lead is 23:55.
+ */
+export function effectiveStartMinutes(startMinutes: number, leadMinutes: number): number {
+  return ((startMinutes - leadMinutes) % MINUTES_PER_DAY + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+}
+
 export interface WindowState {
   inWindow: boolean;
   /**

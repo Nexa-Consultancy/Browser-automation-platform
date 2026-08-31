@@ -6,11 +6,14 @@ import { GroupList } from "./components/GroupList";
 
 type Route = { view: "runs" } | { view: "groups" } | { view: "job"; jobId: string };
 
+// Groups is the landing view: scheduled automations are the main way this
+// gets used, and a one-off custom run is the exception rather than the door
+// you come in through.
 function routeFromHash(): Route {
   const job = location.hash.match(/^#\/job\/(.+)$/);
   if (job) return { view: "job", jobId: job[1] };
-  if (location.hash === "#/groups") return { view: "groups" };
-  return { view: "runs" };
+  if (location.hash === "#/runs") return { view: "runs" };
+  return { view: "groups" };
 }
 
 export default function App() {
@@ -40,16 +43,16 @@ export default function App() {
         </div>
         <nav className="app-tabs">
           <button
-            className={route.view === "groups" ? "" : "active"}
+            className={route.view === "groups" ? "active" : ""}
             onClick={() => go("")}
           >
-            Runs
+            Groups
           </button>
           <button
-            className={route.view === "groups" ? "active" : ""}
-            onClick={() => go("#/groups")}
+            className={route.view === "runs" ? "active" : ""}
+            onClick={() => go("#/runs")}
           >
-            Groups
+            Custom run
           </button>
         </nav>
         <div className="system-status">
@@ -60,16 +63,25 @@ export default function App() {
 
       {route.view === "job" ? (
         <JobView jobId={route.jobId} onBack={() => go("")} />
-      ) : route.view === "groups" ? (
+      ) : route.view === "runs" ? (
         <div className="container">
-          <GroupList onOpenJob={openJob} />
-        </div>
-      ) : (
-        <div className="container">
+          <div className="job-toolbar">
+            <div className="job-toolbar-title">
+              <h2>Custom run</h2>
+              <span className="hint">
+                A one-off automation that starts straight away and isn't saved. For anything recurring, make a
+                group.
+              </span>
+            </div>
+          </div>
           <JobForm onCreated={openJob} />
           <div style={{ marginTop: 24 }}>
             <JobList onSelect={openJob} />
           </div>
+        </div>
+      ) : (
+        <div className="container">
+          <GroupList onOpenJob={openJob} />
         </div>
       )}
     </div>
