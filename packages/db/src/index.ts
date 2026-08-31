@@ -3,3 +3,4 @@ export * from "./jobs.js";
 export * from "./sessions.js";
 export * from "./events.js";
 export * from "./groups.js";
+export * from "./history.js";

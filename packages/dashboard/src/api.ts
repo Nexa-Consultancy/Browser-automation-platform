@@ -1,4 +1,4 @@
-import type { GroupWithSchedule, Job, SessionRow } from "./types";
+import type { DailyReport, GroupWithSchedule, Job, RunHistoryRow, SessionRow } from "./types";
 
 const API_BASE = ""; // same-origin in prod (nginx proxies /api); Vite dev server proxies /api too
 
@@ -132,4 +132,14 @@ export async function runGroupNow(id: string): Promise<{ jobId: string }> {
 
 export async function stopGroupNow(id: string): Promise<void> {
   await json(await fetch(`${API_BASE}/api/groups/${id}/stop-now`, { method: "POST" }));
+}
+
+// ---------- history / daily reports ----------
+
+export async function getHistory(): Promise<{
+  runs: (RunHistoryRow & { localDate: string })[];
+  daily: DailyReport[];
+  serverTimezone: string;
+}> {
+  return json(await fetch(`${API_BASE}/api/history`));
 }

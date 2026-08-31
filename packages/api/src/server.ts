@@ -4,6 +4,7 @@ import multipart from "@fastify/multipart";
 import websocketPlugin from "@fastify/websocket";
 import { migrate } from "@automation/db";
 import { groupRoutes } from "./routes/groups.js";
+import { historyRoutes } from "./routes/history.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { registerWs } from "./ws.js";
@@ -22,6 +23,7 @@ async function main() {
 
   await app.register(jobRoutes);
   await app.register(groupRoutes);
+  await app.register(historyRoutes);
   await app.register(sessionRoutes);
   await app.register(registerWs);
 

@@ -8,26 +8,29 @@
    ============================================================ */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* surfaces */
-  --bg: #0a0e16;
-  --panel: #121826;
-  --panel-2: #182032;
-  --panel-3: #1f2942;
-  --line: #263250;
-  --line-soft: #1a2337;
+  /* surfaces — white page, faintly tinted panels so cards read as raised */
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f4f6fa;
+  --panel-3: #e8ecf4;
+  --line: #d8dee9;
+  --line-soft: #eceff5;
 
-  /* text */
-  --text: #e9edf5;
-  --text-dim: #8993ac;
-  --text-faint: #5b6584;
+  /* text — near-black for anything you read, greys strictly for support */
+  --text: #101828;
+  --text-dim: #5b6474;
+  --text-faint: #8a93a3;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.08);
 
   /* signal colors — each one maps to a real state, not decoration */
-  --live: #3b82f6;      /* running / waiting on you — and the one interactive/chrome accent */
-  --danger: #f0475a;    /* failed */
-  --success: #34d399;   /* complete */
-  --muted: #616b86;     /* idle / stopped / pending */
+  --live: #1d64d8;      /* running / waiting on you — and the one accent */
+  --danger: #c0263b;    /* failed */
+  --success: #067a4e;   /* complete */
+  --muted: #8a93a3;     /* idle / stopped / pending */
 
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
@@ -46,10 +49,12 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  background-image: radial-gradient(ellipse 1200px 600px at 50% -10%, rgba(59, 130, 246, 0.07), transparent);
+  -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.015em; font-weight: 700; color: var(--text); }
+h2 { font-size: 20px; }
+p, li, td { font-weight: 400; }
 
 a { color: var(--live); }
 
@@ -62,7 +67,7 @@ button {
   font-weight: 500;
   cursor: pointer;
   border: 1px solid var(--line);
-  background: var(--panel-2);
+  background: #ffffff;
   color: var(--text);
   border-radius: 6px;
   padding: 7px 13px;
@@ -74,7 +79,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.danger { border-color: rgba(240, 71, 90, 0.4); color: var(--danger); }
 button.danger:hover:not(:disabled) { background: rgba(240, 71, 90, 0.1); border-color: var(--danger); }
 button.primary {
-  background: var(--live); border-color: var(--live); color: #f5f8ff; font-weight: 600;
+  background: var(--live); border-color: var(--live); color: #ffffff; font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: var(--live); }
 
@@ -123,12 +129,12 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: rgba(10, 14, 22, 0.92);
-  backdrop-filter: blur(6px);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
   z-index: 10;
 }
 .app-header h1 {
-  font-size: 15px; margin: 0; font-weight: 600; letter-spacing: 0.02em;
+  font-size: 16px; margin: 0; font-weight: 700; letter-spacing: -0.01em;
 }
 .app-header .brand { display: flex; align-items: center; gap: 9px; cursor: pointer; }
 .app-header .brand .mark {
@@ -150,9 +156,9 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-top-color: rgba(255, 255, 255, 0.04);
   border-radius: 10px;
   padding: 18px;
+  box-shadow: var(--shadow-sm);
 }
 
 .form-grid { display: grid; gap: 20px; }
@@ -163,8 +169,8 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
 .form-three-col { display: grid; grid-template-columns: 1fr 0.7fr 1.3fr; gap: 14px; align-items: start; }
 .hint { font-size: 11px; color: var(--text-faint); margin-top: 4px; line-height: 1.5; }
 .error-banner {
-  background: rgba(240, 71, 90, 0.08);
-  border: 1px solid rgba(240, 71, 90, 0.35);
+  background: rgba(192, 38, 59, 0.06);
+  border: 1px solid rgba(192, 38, 59, 0.3);
   color: var(--danger);
   padding: 10px 12px;
   border-radius: 6px;
@@ -205,9 +211,9 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
   background: var(--live); box-shadow: 0 0 6px rgba(59, 130, 246, 0.8);
   animation: pulse-soft 1.6s ease-in-out infinite;
 }
-.badge.status-completed { color: var(--success); border-color: rgba(52, 211, 153, 0.4); }
+.badge.status-completed { color: var(--success); border-color: rgba(6, 122, 78, 0.35); background: rgba(6, 122, 78, 0.07); }
 .badge.status-completed .dot { background: var(--success); }
-.badge.status-failed { color: var(--danger); border-color: rgba(240, 71, 90, 0.4); }
+.badge.status-failed { color: var(--danger); border-color: rgba(192, 38, 59, 0.35); background: rgba(192, 38, 59, 0.06); }
 .badge.status-failed .dot { background: var(--danger); }
 .badge.status-stopped, .badge.status-pending { color: var(--text-dim); }
 .badge.status-stopped .dot, .badge.status-pending .dot { background: var(--muted); }
@@ -307,13 +313,14 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
 /* ---------- expanded popup ---------- */
 
 .modal-backdrop {
-  position: fixed; inset: 0; background: rgba(4, 6, 10, 0.8);
+  position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45);
   display: flex; align-items: center; justify-content: center;
   z-index: 100; padding: 24px;
   animation: fade-in 140ms ease;
 }
 .modal-panel {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(16, 24, 40, 0.22);
   width: min(1100px, 100%); display: flex; flex-direction: column; gap: 12px; padding: 16px;
   animation: modal-in 160ms ease;
 }
@@ -337,7 +344,7 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
 
 .event-log {
   max-height: 130px; overflow-y: auto; font-size: 11px;
-  background: #070a10; border: 1px solid var(--line-soft); border-radius: 6px; padding: 7px 9px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
   font-family: var(--font-mono);
   display: flex; flex-direction: column; gap: 2px;
 }
@@ -453,7 +460,7 @@ input[type="time"] {
   font-family: var(--font-mono); width: 100%;
 }
 input[type="time"]:focus { border-color: var(--live); }
-input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+input[type="time"]::-webkit-calendar-picker-indicator { cursor: pointer; }
 
 /* ---------- day picker + auto-follow switch ---------- */
 
@@ -517,7 +524,7 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cur
 .group-task > summary:hover { color: var(--live); }
 .group-task pre {
   margin: 6px 0 0; padding: 9px 11px; overflow-x: auto;
-  background: #070a10; border: 1px solid var(--line-soft); border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
   font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6;
   color: var(--text-dim); white-space: pre-wrap; word-break: break-word;
 }
@@ -573,14 +580,14 @@ button.control-on:hover:not(:disabled) { background: rgba(59, 130, 246, 0.2); }
   color: var(--text-faint); font-size: 15px; pointer-events: none;
 }
 .search-field input { padding-left: 29px; }
-.search-field input[type="search"]::-webkit-search-cancel-button { filter: invert(0.6); cursor: pointer; }
+.search-field input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
 .filter-field { display: grid; gap: 5px; }
 .filter-field label { margin: 0; }
 .filter-field input[type="date"] {
   background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
   border-radius: 6px; padding: 8px 10px; font-family: var(--font-mono); font-size: 12.5px;
 }
-.filter-field input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+.filter-field input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
 .filter-count {
   margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
   white-space: nowrap; padding-bottom: 9px;
@@ -617,3 +624,153 @@ button.control-on:hover:not(:disabled) { background: rgba(59, 130, 246, 0.2); }
 }
 .live-keys-input:focus { border-color: var(--live); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15); }
 .live-keys-buttons { display: flex; gap: 5px; flex-shrink: 0; }
+
+/* ============================================================
+   Light theme corrections — rules written for the dark surface
+   that need re-stating now the page is white, plus the mobile
+   layout. Kept at the end so the intent of each override is
+   visible rather than buried in the original block.
+   ============================================================ */
+
+/* Signal dots were tuned to glow on near-black; on white they only need
+   to be solid and legible. */
+.badge .dot,
+.group-title .group-dot,
+.app-header .brand .mark { box-shadow: none; }
+.badge.status-running .dot,
+.badge.status-waiting_video .dot,
+.badge.status-interactive .dot,
+.state-live .group-dot,
+.state-starting .group-dot,
+.state-manual .group-dot { box-shadow: 0 0 0 3px rgba(29, 100, 216, 0.15); }
+
+.system-status .dot { box-shadow: 0 0 0 3px rgba(6, 122, 78, 0.15); }
+
+/* Panels and rails */
+.job-list-item, .group-card, .broadcast-box, .filter-bar { box-shadow: var(--shadow-sm); }
+.group-card.state-held { opacity: 1; background: var(--panel-2); }
+
+.session-step-line { background: var(--panel-2); }
+.video-timer { background: rgba(29, 100, 216, 0.06); border-color: rgba(29, 100, 216, 0.3); }
+.group-countdown { background: var(--panel-2); }
+.state-live .group-countdown,
+.state-starting .group-countdown,
+.state-manual .group-countdown { background: rgba(29, 100, 216, 0.06); }
+.step-item.current { background: rgba(29, 100, 216, 0.08); }
+.app-tabs button.active { background: rgba(29, 100, 216, 0.08); border-color: rgba(29, 100, 216, 0.35); }
+.day-chip.on { background: rgba(29, 100, 216, 0.08); border-color: rgba(29, 100, 216, 0.45); }
+button.control-on { background: rgba(29, 100, 216, 0.08); border-color: rgba(29, 100, 216, 0.45); }
+.switch-row { background: var(--panel-2); }
+.switch-row > input:checked ~ .switch-track { background: rgba(29, 100, 216, 0.2); }
+.modal-screencast.controllable { box-shadow: 0 0 0 2px rgba(29, 100, 216, 0.25); }
+button.danger { border-color: rgba(192, 38, 59, 0.35); }
+button.danger:hover:not(:disabled) { background: rgba(192, 38, 59, 0.06); }
+
+/* Type scale: headings and the things you act on are bold; supporting
+   text stays regular so the bold actually means something. */
+.job-toolbar-title h2 { font-weight: 700; }
+.session-head .name,
+.group-title .name { font-weight: 700; }
+.eyebrow { font-weight: 700; color: var(--live); }
+label { font-weight: 500; color: var(--text-dim); }
+.hint { color: var(--text-dim); }
+
+/* Inputs read as fields on white, not as holes in a dark surface. */
+input[type="text"], input[type="number"], input[type="url"], input[type="search"],
+input[type="time"], input[type="date"], textarea, select {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm) inset;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: var(--live);
+  box-shadow: 0 0 0 3px rgba(29, 100, 216, 0.12);
+  outline: none;
+}
+input::placeholder, textarea::placeholder { color: var(--text-faint); }
+
+/* The screencast stays dark — it's a video surface, not a document. */
+.screencast-wrap, .modal-screencast { background: #0b0e14; border-color: var(--line); }
+
+/* ---------- responsive: usable on a phone ---------- */
+
+@media (max-width: 900px) {
+  .container { padding: 14px; }
+  .session-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .app-header { padding: 10px 14px; }
+  .app-header h1 { font-size: 15px; }
+  .system-status { display: none; }          /* decorative; the space is not */
+  .app-tabs button { flex: 1; text-align: center; padding: 8px 10px; }
+
+  .job-toolbar-actions { width: 100%; }
+  .job-toolbar-actions button { flex: 1; }
+
+  .group-card-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .group-window { flex-wrap: wrap; }
+  .group-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .group-actions button { width: 100%; }
+
+  .name-grid { grid-template-columns: 1fr 1fr; }
+  .modal-backdrop { padding: 10px; }
+  .modal-form { max-height: calc(100vh - 20px); }
+  .modal-actions { flex-direction: column-reverse; }
+  .modal-actions button { width: 100%; }
+
+  .live-keys-input { flex: 1 1 100%; }
+  .session-followup { flex-wrap: wrap; }
+  .session-followup input { flex: 1 1 100%; }
+
+  .broadcast-box { flex-direction: column; }
+}
+
+/* ---------- history: report cards + run table ---------- */
+
+.report-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.report-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px 16px; display: grid; gap: 3px; box-shadow: var(--shadow-sm);
+  border-left: 3px solid var(--line);
+}
+.report-card.ok  { border-left-color: var(--success); }
+.report-card.bad { border-left-color: var(--danger); }
+.report-value { font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.1; }
+.report-card.ok  .report-value { color: var(--success); }
+.report-card.bad .report-value { color: var(--danger); }
+.report-label { font-size: 11.5px; color: var(--text-dim); }
+
+/* A table needs to scroll on its own rather than pushing the page sideways. */
+.table-scroll {
+  overflow-x: auto; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); box-shadow: var(--shadow-sm);
+}
+.history-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 720px; }
+.history-table th {
+  text-align: left; font-family: var(--font-display); font-weight: 700; font-size: 11px;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim);
+  padding: 11px 14px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.history-table td {
+  padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top;
+}
+.history-table tbody tr:last-child td { border-bottom: none; }
+.history-table tbody tr:not(.no-hover) { cursor: pointer; }
+.history-table tbody tr:not(.no-hover):hover { background: var(--panel-2); }
+.history-table .run-name { display: block; font-weight: 600; }
+.history-table .run-url,
+.history-table .run-users {
+  display: block; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint);
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.history-table .dim { color: var(--text-faint); }
+.history-table .ok  { color: var(--success); font-weight: 600; }
+.history-table .bad { color: var(--danger); font-weight: 600; }
+.tally { font-family: var(--font-mono); font-size: 11.5px; margin-right: 7px; }
+.tally.ok  { color: var(--success); }
+.tally.bad { color: var(--danger); }
+.tally.dim { color: var(--text-faint); }

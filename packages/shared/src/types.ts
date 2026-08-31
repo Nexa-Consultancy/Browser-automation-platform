@@ -133,3 +133,32 @@ export interface GroupSchedule {
 export interface GroupWithSchedule extends Group {
   schedule: GroupSchedule;
 }
+
+/** One past run, with its outcome rolled up — the row shape behind the
+ * History tab and the daily report. */
+export interface RunHistoryRow {
+  jobId: string;
+  name: string;
+  targetUrl: string;
+  status: JobStatus;
+  groupId: string | null;
+  groupName: string | null;
+  userNames: string[];
+  sessionCount: number;
+  completed: number;
+  failed: number;
+  stopped: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+/** Totals for one calendar day, in the server's own zone. */
+export interface DailyReport {
+  date: string; // "YYYY-MM-DD"
+  runs: number;
+  sessions: number;
+  completed: number;
+  failed: number;
+  stopped: number;
+}

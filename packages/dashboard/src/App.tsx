@@ -3,8 +3,13 @@ import { JobForm } from "./components/JobForm";
 import { JobList } from "./components/JobList";
 import { JobView } from "./components/JobView";
 import { GroupList } from "./components/GroupList";
+import { HistoryView } from "./components/HistoryView";
 
-type Route = { view: "runs" } | { view: "groups" } | { view: "job"; jobId: string };
+type Route =
+  | { view: "runs" }
+  | { view: "groups" }
+  | { view: "history" }
+  | { view: "job"; jobId: string };
 
 // Groups is the landing view: scheduled automations are the main way this
 // gets used, and a one-off custom run is the exception rather than the door
@@ -13,6 +18,7 @@ function routeFromHash(): Route {
   const job = location.hash.match(/^#\/job\/(.+)$/);
   if (job) return { view: "job", jobId: job[1] };
   if (location.hash === "#/runs") return { view: "runs" };
+  if (location.hash === "#/history") return { view: "history" };
   return { view: "groups" };
 }
 
@@ -54,6 +60,12 @@ export default function App() {
           >
             Custom run
           </button>
+          <button
+            className={route.view === "history" ? "active" : ""}
+            onClick={() => go("#/history")}
+          >
+            View more
+          </button>
         </nav>
         <div className="system-status">
           <span className="dot" />
@@ -63,6 +75,10 @@ export default function App() {
 
       {route.view === "job" ? (
         <JobView jobId={route.jobId} onBack={() => go("")} />
+      ) : route.view === "history" ? (
+        <div className="container">
+          <HistoryView onOpenJob={openJob} />
+        </div>
       ) : route.view === "runs" ? (
         <div className="container">
           <div className="job-toolbar">
