@@ -8,6 +8,9 @@ export interface StepContext {
   row: Record<string, string>;
   signal: AbortSignal;
   maxVideoWaitMs: number;
+  /** How long an action waits for its target to appear. The wait ends the
+   * moment the element shows up, so this is a ceiling, not a delay. */
+  timeoutMs: number;
   onVideoTick: (elapsedMs: number, currentTime: number, duration: number) => void;
   onScreenshot: (jpegBase64: string) => void;
 }
@@ -24,14 +27,14 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "click": {
-      const loc = await resolveClickable(page, t(step.target, ctx.row));
-      await loc.click({ timeout: 15_000 });
+      const loc = await resolveClickable(page, t(step.target, ctx.row), ctx.timeoutMs);
+      await loc.click({ timeout: ctx.timeoutMs });
       return;
     }
 
     case "fill": {
-      const loc = await resolveField(page, t(step.field, ctx.row));
-      await loc.fill(t(step.value, ctx.row), { timeout: 15_000 });
+      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
+      await loc.fill(t(step.value, ctx.row), { timeout: ctx.timeoutMs });
       return;
     }
 
@@ -40,25 +43,25 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
       return;
 
     case "select": {
-      const loc = await resolveField(page, t(step.field, ctx.row));
+      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
       const option = t(step.option, ctx.row);
       try {
-        await loc.selectOption({ label: option }, { timeout: 15_000 });
+        await loc.selectOption({ label: option }, { timeout: ctx.timeoutMs });
       } catch {
-        await loc.selectOption(option, { timeout: 15_000 });
+        await loc.selectOption(option, { timeout: ctx.timeoutMs });
       }
       return;
     }
 
     case "check": {
-      const loc = await resolveField(page, t(step.field, ctx.row));
-      await loc.check({ timeout: 15_000 });
+      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
+      await loc.check({ timeout: ctx.timeoutMs });
       return;
     }
 
     case "uncheck": {
-      const loc = await resolveField(page, t(step.field, ctx.row));
-      await loc.uncheck({ timeout: 15_000 });
+      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
+      await loc.uncheck({ timeout: ctx.timeoutMs });
       return;
     }
 
@@ -69,7 +72,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     case "wait_text":
       await page.getByText(t(step.text, ctx.row), { exact: false }).first().waitFor({
         state: "visible",
-        timeout: 120_000,
+        timeout: Math.max(ctx.timeoutMs, 120_000),
       });
       return;
 
@@ -78,7 +81,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
       return;
 
     case "wait_element":
-      await page.waitForSelector(t(step.selector, ctx.row), { timeout: 120_000 });
+      await page.waitForSelector(t(step.selector, ctx.row), { timeout: Math.max(ctx.timeoutMs, 120_000) });
       return;
 
     case "wait_video":

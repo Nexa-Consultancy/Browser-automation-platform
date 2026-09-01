@@ -1,5 +1,6 @@
 import { chromium, type Browser, type Page } from "playwright";
 import {
+  getSettings,
   getJob,
   listSessionsByJob,
   setJobStatus,
@@ -17,6 +18,18 @@ import { emitEvent } from "./events.js";
 import { publishAlert } from "./alert.js";
 
 const MAX_VIDEO_WAIT_MS = Number(process.env.MAX_VIDEO_WAIT_MS ?? 10_800_000);
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** How long an action may wait for its target, from the Settings page.
+ * Read per run so a change takes effect on the next job without a restart. */
+async function actionTimeoutMs(): Promise<number> {
+  try {
+    const n = Number((await getSettings()).BROWSER_TIMEOUT_MS);
+    return Number.isFinite(n) && n >= 1000 ? n : DEFAULT_TIMEOUT_MS;
+  } catch {
+    return DEFAULT_TIMEOUT_MS;
+  }
+}
 
 export async function runJob(jobId: string): Promise<void> {
   const job = await getJob(jobId);
@@ -89,6 +102,7 @@ async function applyInput(page: Page, action: InputAction): Promise<void> {
  */
 export async function runSession(browser: Browser, job: Job, session: SessionRow): Promise<void> {
   const pub = newRedisConnection();
+  const timeoutMs = await actionTimeoutMs();
   // Fixed viewport so the dashboard's screencast click passthrough can map
   // displayed pixel coordinates back to real page coordinates deterministically
   // (see packages/dashboard/src/viewport.ts — keep these two in sync).
@@ -167,6 +181,7 @@ export async function runSession(browser: Browser, job: Job, session: SessionRow
           row,
           signal: abort.signal,
           maxVideoWaitMs: MAX_VIDEO_WAIT_MS,
+          timeoutMs,
           onVideoTick: (elapsedMs, currentTime, duration) => {
             void emitEvent(session.id, job.id, "video_wait_tick", { elapsedMs, currentTime, duration });
           },
