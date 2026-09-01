@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
 interface MicrosoftAuthContextType {
   profile: string | null;
@@ -17,6 +17,7 @@ export function useMicrosoftAuth() {
 }
 
 interface MicrosoftAuthProps {
+  children: ReactNode;
   profileNames?: string[];
 }
 
