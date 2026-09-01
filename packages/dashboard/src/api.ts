@@ -222,3 +222,11 @@ export async function clearTeamsLogin(): Promise<void> {
 export async function applyMasterToGroup(id: string): Promise<{ seeded: number }> {
   return json(await fetch(`${API_BASE}/api/groups/${id}/apply-master`, { method: "POST" }));
 }
+
+/** Upload a captured Teams session (Playwright storageState JSON) so the
+ * server bakes it into the master profile. */
+export async function importTeamsLogin(file: File): Promise<{ ok: boolean; message?: string }> {
+  const form = new FormData();
+  form.set("file", file);
+  return json(await fetch(`${API_BASE}/api/teams-login/import`, { method: "POST", body: form }));
+}

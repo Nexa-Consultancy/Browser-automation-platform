@@ -15,9 +15,11 @@
     "dev:worker": "npm run dev -w @automation/worker",
     "dev:dashboard": "npm run dev -w @automation/dashboard",
     "typecheck": "npm run typecheck -w @automation/shared -w @automation/db -w @automation/queue -w @automation/api -w @automation/worker -w @automation/dashboard",
-    "test": "npm test -w @automation/shared"
+    "test": "npm test -w @automation/shared",
+    "capture:login": "node scripts/capture-login.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "playwright": "1.49.0"
   }
 }

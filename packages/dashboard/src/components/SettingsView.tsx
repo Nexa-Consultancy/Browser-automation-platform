@@ -64,6 +64,23 @@ export function SettingsView() {
     }
   }
 
+  async function importTeams(file: File) {
+    setTeamsBusy(true);
+    setMsg(null);
+    try {
+      const r = await api.importTeamsLogin(file);
+      setMsg({ kind: "ok", text: r.message ?? "Imported." });
+      // The bake runs in the worker; give it a moment, then refresh status.
+      setTimeout(() => {
+        void api.teamsLoginStatus().then((s) => setTeamsSignedIn(s.signedIn)).catch(() => {});
+      }, 4000);
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTeamsBusy(false);
+    }
+  }
+
   async function forgetTeams() {
     if (!confirm("Forget the shared Teams login? You'll need to sign in again before applying it to groups.")) return;
     setTeamsBusy(true);
@@ -164,6 +181,27 @@ export function SettingsView() {
               opens — log in with the mouse/keyboard takeover, click <strong>Yes</strong> on "Stay signed in", then
               stop the run. After that, open any group and hit <strong>Apply master login</strong> so every user
               joins already authenticated — no guest, no "matching cookie" error.
+            </div>
+
+            <div className="import-login">
+              <div className="import-login-head">Or import a login from your own computer</div>
+              <div className="hint" style={{ marginTop: 0 }}>
+                If the sign-in above keeps failing, log in where it works — your own browser — and bring the session
+                here. On your computer, in the project folder, run:
+                <pre className="import-cmd">npm run capture:login</pre>
+                A real browser opens; sign in to Teams, then close it. It writes <code>teams-auth.json</code> — upload
+                that file below.
+              </div>
+              <input
+                type="file"
+                accept="application/json,.json"
+                disabled={teamsBusy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void importTeams(f);
+                  e.target.value = "";
+                }}
+              />
             </div>
           </div>
         </div>
