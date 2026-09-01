@@ -31,6 +31,8 @@ export function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [teamsSignedIn, setTeamsSignedIn] = useState(false);
+  const [teamsBusy, setTeamsBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -45,7 +47,35 @@ export function SettingsView() {
 
   useEffect(() => {
     void load();
+    void api.teamsLoginStatus().then((r) => setTeamsSignedIn(r.signedIn)).catch(() => {});
   }, [load]);
+
+  async function signInTeams() {
+    setTeamsBusy(true);
+    setMsg(null);
+    try {
+      const { jobId } = await api.startTeamsLogin();
+      // Open the live run so the user can drive the sign-in by hand.
+      location.hash = `#/job/${jobId}`;
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTeamsBusy(false);
+    }
+  }
+
+  async function forgetTeams() {
+    if (!confirm("Forget the shared Teams login? You'll need to sign in again before applying it to groups.")) return;
+    setTeamsBusy(true);
+    try {
+      await api.clearTeamsLogin();
+      setTeamsSignedIn(false);
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTeamsBusy(false);
+    }
+  }
 
   function set(key: string, value: string) {
     setS((prev) => ({ ...prev, [key]: value }));
@@ -109,6 +139,35 @@ export function SettingsView() {
       )}
 
       <div className="settings-grid">
+        {/* ---------- shared Teams master login ---------- */}
+        <div className="card form-grid">
+          <div className="form-section">
+            <div className="eyebrow">Teams master login</div>
+            <div className="master-login-row">
+              <div className={`master-status ${teamsSignedIn ? "ok" : ""}`}>
+                <span className="dot" />
+                {teamsSignedIn ? "A Teams account is signed in" : "No account signed in yet"}
+              </div>
+              <div className="master-actions">
+                <button className="primary" onClick={signInTeams} disabled={teamsBusy}>
+                  {teamsBusy ? "Opening…" : teamsSignedIn ? "Re-sign in" : "Sign in to Teams"}
+                </button>
+                {teamsSignedIn && (
+                  <button className="danger" onClick={forgetTeams} disabled={teamsBusy}>
+                    Forget login
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="hint">
+              Sign in <strong>once</strong> with the single account all sessions should share. A live browser
+              opens — log in with the mouse/keyboard takeover, click <strong>Yes</strong> on "Stay signed in", then
+              stop the run. After that, open any group and hit <strong>Apply master login</strong> so every user
+              joins already authenticated — no guest, no "matching cookie" error.
+            </div>
+          </div>
+        </div>
+
         {/* ---------- network egress ---------- */}
         <div className="card form-grid">
           <div className="form-section">

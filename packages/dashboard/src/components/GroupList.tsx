@@ -268,6 +268,23 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                   disabled={busy === g.id || live}
                   title={
                     live
+                      ? "Stop the run before applying the master login"
+                      : "Seed every user from the shared Teams master login so they join already signed in"
+                  }
+                  onClick={() =>
+                    act(g.id, async () => {
+                      const { seeded } = await api.applyMasterToGroup(g.id);
+                      setError(null);
+                      alert(`Applied the master Teams login to ${seeded} user(s). Their next run joins signed in.`);
+                    })
+                  }
+                >
+                  Apply master login
+                </button>
+                <button
+                  disabled={busy === g.id || live}
+                  title={
+                    live
                       ? "Stop the run before clearing saved logins"
                       : "Delete this group's saved cookies/logins so the next run starts signed out"
                   }

@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import type { Job, SessionRow } from "@automation/shared";
+import { MASTER_LOGIN_JOB_NAME, type Job, type SessionRow } from "@automation/shared";
 
 /**
  * Where a user's browser profile lives on disk.
@@ -25,7 +25,18 @@ export interface ProfilePlan {
   persistent: boolean;
 }
 
+/** The single shared master profile that Teams is signed into once. */
+export function masterProfileDir(): string {
+  return path.join(ROOT, "_master");
+}
+
 export function profilePlanFor(job: Job, session: SessionRow, persistEnabled: boolean): ProfilePlan {
+  // The master-login run signs the one shared account in; its profile must
+  // persist (it is the source every group is seeded from) and never be the
+  // per-group path.
+  if (job.name === MASTER_LOGIN_JOB_NAME && !job.groupId) {
+    return { dir: masterProfileDir(), persistent: true };
+  }
   if (persistEnabled && job.groupId) {
     return { dir: path.join(ROOT, job.groupId, String(session.userIndex)), persistent: true };
   }

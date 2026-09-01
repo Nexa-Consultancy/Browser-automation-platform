@@ -815,3 +815,11 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 @media (max-width: 640px) {
   .egress-badge { max-width: 100%; order: 4; width: 100%; justify-content: center; }
 }
+
+/* ---------- Teams master login (settings) ---------- */
+.master-login-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.master-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); }
+.master-status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.master-status.ok { color: var(--text); }
+.master-status.ok .dot { background: var(--success); box-shadow: 0 0 0 3px rgba(6,122,78,0.15); }
+.master-actions { display: flex; gap: 8px; }

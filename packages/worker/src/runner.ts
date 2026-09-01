@@ -116,6 +116,15 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   const context = await chromium.launchPersistentContext(plan.dir, {
     headless: true,
     viewport: { width: 1280, height: 720 },
+    // Microsoft's login (and many sites) reject or misbehave for browsers
+    // that announce themselves as automation — that's a common cause of the
+    // "context id did not have a matching cookie" login failure. Present a
+    // normal Chrome and drop the automation banner so the sign-in flow that
+    // seeds these profiles can actually complete.
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    args: ["--disable-blink-features=AutomationControlled"],
+    ignoreDefaultArgs: ["--enable-automation"],
   });
   // A persistent context opens with one page already; reuse it.
   const page = context.pages()[0] ?? (await context.newPage());
