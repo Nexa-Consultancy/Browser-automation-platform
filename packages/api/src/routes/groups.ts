@@ -23,6 +23,13 @@ import {
   type GroupWithSchedule,
 } from "@automation/shared";
 import { launchJob, normalizeSteps, stopJob } from "../services/launch.js";
+import { rmSync } from "node:fs";
+import path from "node:path";
+
+// Must match the worker's PROFILES_DIR (packages/worker/src/profile.ts): the
+// api and worker share the same /data/profiles volume, the worker writes it,
+// the api clears it.
+const PROFILES_DIR = process.env.PROFILES_DIR || "/data/profiles";
 
 const MAX_USERS_PER_GROUP = 200;
 
@@ -194,6 +201,23 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     // Turning a group off while its window is live is handled by the
     // scheduler's next tick, which stops the run it's holding open.
     return { group: withSchedule(group) };
+  });
+
+  // Wipe a group's saved logins/cookies. The next run for each user starts
+  // signed out and fresh — the fix for a stale or wrong Teams session.
+  app.post("/api/groups/:id/clear-profiles", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const group = await getGroup(id);
+    if (!group) return reply.code(404).send({ error: "not found" });
+    if (group.activeJobId) {
+      return reply.code(409).send({ error: "stop the group's current run before clearing its profiles" });
+    }
+    try {
+      rmSync(path.join(PROFILES_DIR, id), { recursive: true, force: true });
+    } catch (e) {
+      return reply.code(500).send({ error: e instanceof Error ? e.message : "could not clear profiles" });
+    }
+    reply.send({ ok: true });
   });
 
   app.delete("/api/groups/:id", async (req, reply) => {

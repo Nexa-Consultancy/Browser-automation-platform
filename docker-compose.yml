@@ -45,6 +45,10 @@ services:
       TZ: ${TZ}
     ports:
       - "4000:4000"
+    # Read-write so the "Clear saved logins" action can delete a group's
+    # profile directory; the worker is what writes them.
+    volumes:
+      - profiles:/data/profiles
 
   worker:
     build:
@@ -62,8 +66,13 @@ services:
       POSTGRES_USER: qa_automation
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_URL: redis://redis:6379
+      PROFILES_DIR: /data/profiles
     restart: unless-stopped
     shm_size: "1gb"
+    # Persistent per-user browser profiles (cookies, logins, history) so a
+    # Teams sign-in done once carries into every later run for that group.
+    volumes:
+      - profiles:/data/profiles
 
   dashboard:
     build:
@@ -76,3 +85,4 @@ services:
 
 volumes:
   pgdata:
+  profiles:

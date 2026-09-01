@@ -196,3 +196,9 @@ export async function getLogs(level?: string): Promise<{ logs: SystemLog[] }> {
 export async function getEgressInfo(): Promise<EgressInfo> {
   return json(await fetch(`${API_BASE}/api/system/egress-info`));
 }
+
+/** Wipe a group's saved browser profiles (cookies/logins). Next run starts
+ * signed out. Refused while the group has a run in progress. */
+export async function clearGroupProfiles(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/groups/${id}/clear-profiles`, { method: "POST" }));
+}

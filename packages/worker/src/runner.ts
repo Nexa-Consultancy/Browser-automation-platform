@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Page } from "playwright";
 import {
   getSettings,
   getJob,
@@ -16,6 +16,7 @@ import { startScreencast } from "./screencast.js";
 import { executeStep } from "./stepExecutor.js";
 import { emitEvent } from "./events.js";
 import { publishAlert } from "./alert.js";
+import { ensureDir, profilePlanFor, removeDir } from "./profile.js";
 
 const MAX_VIDEO_WAIT_MS = Number(process.env.MAX_VIDEO_WAIT_MS ?? 10_800_000);
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -38,16 +39,13 @@ export async function runJob(jobId: string): Promise<void> {
 
   await setJobStatus(jobId, "running");
 
-  const browser = await chromium.launch({ headless: true });
-  try {
-    await runWithConcurrency(sessions, job.concurrency, (session) =>
-      runSession(browser, job, session).catch((err) =>
-        console.error(`session ${session.id} crashed:`, err),
-      ),
-    );
-  } finally {
-    await browser.close().catch(() => {});
-  }
+  // Each session now launches its OWN persistent browser (see runSession):
+  // a persistent profile is inseparable from its browser process, so the
+  // old "one shared browser, many contexts" model can't carry per-user
+  // saved logins. There's no shared browser to launch or close here anymore.
+  await runWithConcurrency(sessions, job.concurrency, (session) =>
+    runSession(job, session).catch((err) => console.error(`session ${session.id} crashed:`, err)),
+  );
 
   const finalSessions = await listSessionsByJob(jobId);
   const anyFailed = finalSessions.some((s) => s.status === "failed");
@@ -100,14 +98,27 @@ async function applyInput(page: Page, action: InputAction): Promise<void> {
  * parks the session in "interactive" status so a follow-up prompt
  * (per-user or job-wide) or a manual Stop can still reach the live page.
  */
-export async function runSession(browser: Browser, job: Job, session: SessionRow): Promise<void> {
+export async function runSession(job: Job, session: SessionRow): Promise<void> {
   const pub = newRedisConnection();
+  const settings = await getSettings().catch(() => ({}) as Record<string, string>);
   const timeoutMs = await actionTimeoutMs();
+
+  // A user's cookies, storage and logins live in their own on-disk profile
+  // dir so a Teams (or any) sign-in done once carries into every later run.
+  // That requires launchPersistentContext, which IS its own browser — so
+  // this session owns a browser, not a context borrowed from a shared one.
+  const plan = profilePlanFor(job, session, settings.PERSIST_PROFILES !== "false");
+  ensureDir(plan.dir);
+
   // Fixed viewport so the dashboard's screencast click passthrough can map
   // displayed pixel coordinates back to real page coordinates deterministically
   // (see packages/dashboard/src/viewport.ts — keep these two in sync).
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
+  const context = await chromium.launchPersistentContext(plan.dir, {
+    headless: true,
+    viewport: { width: 1280, height: 720 },
+  });
+  // A persistent context opens with one page already; reuse it.
+  const page = context.pages()[0] ?? (await context.newPage());
 
   let stopped = false;
   let abort = new AbortController();
@@ -273,7 +284,11 @@ ${stepError}`,
     await emitEvent(session.id, job.id, "status_change", { status: "failed" });
   } finally {
     control.close();
+    // Closing a persistent context closes its browser too. The profile dir
+    // stays on disk (that's the point); a scratch dir for a one-off run is
+    // reclaimed so ad-hoc runs don't leak directories nothing can reuse.
     await context.close().catch(() => {});
+    if (!plan.persistent) removeDir(plan.dir);
     pub.disconnect();
   }
 }

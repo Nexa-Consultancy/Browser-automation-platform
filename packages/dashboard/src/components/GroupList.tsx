@@ -265,6 +265,21 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                   Edit
                 </button>
                 <button
+                  disabled={busy === g.id || live}
+                  title={
+                    live
+                      ? "Stop the run before clearing saved logins"
+                      : "Delete this group's saved cookies/logins so the next run starts signed out"
+                  }
+                  onClick={() => {
+                    if (confirm(`Clear saved logins for "${g.name}"? Every user in it will start the next run signed out.`)) {
+                      void act(g.id, () => api.clearGroupProfiles(g.id));
+                    }
+                  }}
+                >
+                  Clear saved logins
+                </button>
+                <button
                   className="danger"
                   disabled={busy === g.id}
                   onClick={() => {
