@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InputAction } from "../types";
 import { ScreencastImage } from "./ScreencastImage";
 import { ScreencastControls } from "./ScreencastControls";
@@ -28,6 +28,7 @@ interface Props {
  */
 export function ScreencastModal({ userName, frame, parked, live, onInput, onClose }: Props) {
   const [control, setControl] = useState(parked);
+  const backdropMouseDown = useRef(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -46,7 +47,16 @@ export function ScreencastModal({ userName, frame, parked, live, onInput, onClos
   const active = control && live;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        backdropMouseDown.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && backdropMouseDown.current) onClose();
+        backdropMouseDown.current = false;
+      }}
+    >
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span>{userName}</span>

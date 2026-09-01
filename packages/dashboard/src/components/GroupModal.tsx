@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupWithSchedule } from "../types";
 import * as api from "../api";
 
@@ -88,14 +88,35 @@ export function GroupModal({
   const [showPrompt, setShowPrompt] = useState(!group);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set by any edit in the form. Once true, nothing closes this dialog
+  // without asking — losing a half-filled group to a stray key or click is
+  // far worse than one extra confirm.
+  const [dirty, setDirty] = useState(false);
+  const backdropMouseDown = useRef(false);
+
+  const requestClose = useCallback(() => {
+    if (dirty && !confirm("Discard this group? Anything you have typed will be lost.")) return;
+    onClose();
+  }, [dirty, onClose]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Escape also dismisses a native date/time picker and a <select>
+      // dropdown. Closing the whole dialog because someone dismissed a
+      // picker is how a filled-in form disappears, so a keypress landing on
+      // a field is left to the field.
+      const el = document.activeElement;
+      const inField =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLSelectElement ||
+        el instanceof HTMLTextAreaElement;
+      if (inField) return;
+      requestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [requestClose]);
 
   function changeUserCount(raw: number) {
     const count = Math.max(1, Math.min(MAX_USERS, Math.floor(raw) || 1));
@@ -156,16 +177,44 @@ export function GroupModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      // A click is only a backdrop click when it BEGINS and ENDS on the
+      // backdrop. Without the mousedown half, drag-selecting text in the
+      // prompt box and releasing outside the panel dispatches the click on
+      // the nearest common ancestor — the backdrop — and throws the whole
+      // half-filled form away.
+      onMouseDown={(e) => {
+        backdropMouseDown.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && backdropMouseDown.current) requestClose();
+        backdropMouseDown.current = false;
+      }}
+    >
       <div className="modal-panel modal-form" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <span>{editing ? `Edit ${group!.name}` : "Create new group"}</span>
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={requestClose}>
             ✕
           </button>
         </div>
 
-        <form className="form-grid" onSubmit={submit}>
+        <form
+          className="form-grid"
+          onSubmit={submit}
+          onChange={() => setDirty(true)}
+          // Enter in a single-line field would otherwise submit the form
+          // implicitly — saving a group someone was still filling in, or
+          // failing validation and looking like the dialog "did something".
+          // Saving stays an explicit press of the Save button. The prompt is
+          // a textarea, so its Enter still makes a new line.
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.target as HTMLElement)?.tagName === "INPUT") {
+              e.preventDefault();
+            }
+          }}
+        >
           {error && <div className="error-banner">{error}</div>}
 
           <div className="form-section">
@@ -311,7 +360,7 @@ export function GroupModal({
           </div>
 
           <div className="form-section modal-actions">
-            <button type="button" onClick={onClose} disabled={submitting}>
+            <button type="button" onClick={requestClose} disabled={submitting}>
               Cancel
             </button>
             <button className="primary" type="submit" disabled={submitting}>
