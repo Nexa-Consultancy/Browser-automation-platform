@@ -24,6 +24,7 @@ import { executeStep } from "./stepExecutor.js";
 import { emitEvent } from "./events.js";
 import { publishAlert } from "./alert.js";
 import { clearProfileLocks, ensureDir, profilePlanFor, removeDir } from "./profile.js";
+import { proxyFromSettings } from "./proxyFromSettings.js";
 
 const MAX_VIDEO_WAIT_MS = Number(process.env.MAX_VIDEO_WAIT_MS ?? 10_800_000);
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -132,9 +133,16 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // with this machine's key and Teams' IndexedDB tokens are written
   // natively, so "Apply master login" copies a profile that actually works.
   const isMasterLogin = job.name === MASTER_LOGIN_JOB_NAME && !job.groupId;
+  // Route the browser through the proxy configured in Settings, if any, so
+  // its traffic exits from there rather than this server's own IP. This is
+  // what makes "appear to be somewhere else" actually work — and the way to
+  // test whether a login failure is really the server's location: point it
+  // at a proxy elsewhere and see if the same login succeeds.
+  const proxy = proxyFromSettings(settings);
   const context = await chromium.launchPersistentContext(plan.dir, {
     headless: !isMasterLogin,
     viewport: { width: 1280, height: 720 },
+    ...(proxy ? { proxy } : {}),
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     args: [
