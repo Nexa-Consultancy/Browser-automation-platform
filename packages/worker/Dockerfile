@@ -17,8 +17,8 @@ RUN npm install --no-audit --no-fund
 COPY . .
 
 ENV NODE_ENV=production
-# Run under a virtual display so the master Teams sign-in can use a REAL
-# (non-headless) browser — Microsoft blocks headless logins. Ordinary runs
-# stay headless and simply ignore the display. xvfb ships in the Playwright
-# image.
-CMD ["xvfb-run", "-a", "--server-args=-screen 0 1280x720x24", "npm", "run", "start", "-w", "@automation/worker"]
+# The entrypoint starts a virtual X display (Xvfb) and then the worker, so the
+# master Teams sign-in can run a REAL (non-headless) browser — Microsoft
+# blocks headless logins. Ordinary runs stay headless and ignore the display.
+# xvfb ships in the Playwright image.
+CMD ["sh", "/app/packages/worker/entrypoint.sh"]
