@@ -47,6 +47,26 @@ export function ensureDir(dir: string): void {
   mkdirSync(dir, { recursive: true });
 }
 
+/**
+ * Removes Chromium's singleton lock files from a profile dir.
+ *
+ * A crash (or a kill) leaves a SingletonLock pointing at a now-dead process,
+ * and Chromium then refuses to open the profile at all — "the profile appears
+ * to be in use by another process" — which permanently wedges that profile
+ * until the file is cleared. We enforce one run per profile ourselves, so
+ * clearing these before launch is safe and turns a wedged profile back into a
+ * usable one.
+ */
+export function clearProfileLocks(dir: string): void {
+  for (const name of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+    try {
+      rmSync(path.join(dir, name), { force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** Best-effort removal — used for scratch dirs and the Clear-profile action.
  * A failure here must never break a run, so it's swallowed. */
 export function removeDir(dir: string): void {

@@ -23,7 +23,7 @@ import { startScreencast } from "./screencast.js";
 import { executeStep } from "./stepExecutor.js";
 import { emitEvent } from "./events.js";
 import { publishAlert } from "./alert.js";
-import { ensureDir, profilePlanFor, removeDir } from "./profile.js";
+import { clearProfileLocks, ensureDir, profilePlanFor, removeDir } from "./profile.js";
 
 const MAX_VIDEO_WAIT_MS = Number(process.env.MAX_VIDEO_WAIT_MS ?? 10_800_000);
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -116,6 +116,9 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // this session owns a browser, not a context borrowed from a shared one.
   const plan = profilePlanFor(job, session, settings.PERSIST_PROFILES !== "false");
   ensureDir(plan.dir);
+  // A previous crash can leave a stale lock that blocks Chromium from ever
+  // opening this profile again; clear it before launching.
+  clearProfileLocks(plan.dir);
 
   // Fixed viewport so the dashboard's screencast click passthrough can map
   // displayed pixel coordinates back to real page coordinates deterministically
