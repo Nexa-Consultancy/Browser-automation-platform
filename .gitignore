@@ -6,3 +6,7 @@ dist/
 playwright-report/
 test-results/
 storage/
+
+# Captured Teams session — live auth tokens, never commit.
+teams-auth.json
+capture.log
