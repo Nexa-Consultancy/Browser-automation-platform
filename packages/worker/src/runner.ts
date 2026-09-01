@@ -10,7 +10,14 @@ import {
   bumpTotalSteps,
 } from "@automation/db";
 import { newRedisConnection, screencastChannel, screencastLastFrameKey } from "@automation/queue";
-import { parseSteps, type Job, type SessionRow, type ParsedStep, type InputAction } from "@automation/shared";
+import {
+  MASTER_LOGIN_JOB_NAME,
+  parseSteps,
+  type Job,
+  type SessionRow,
+  type ParsedStep,
+  type InputAction,
+} from "@automation/shared";
 import { subscribeControl } from "./controlListener.js";
 import { startScreencast } from "./screencast.js";
 import { executeStep } from "./stepExecutor.js";
@@ -113,17 +120,26 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // Fixed viewport so the dashboard's screencast click passthrough can map
   // displayed pixel coordinates back to real page coordinates deterministically
   // (see packages/dashboard/src/viewport.ts — keep these two in sync).
+  // The master Teams sign-in runs as a REAL, visible browser (on the
+  // worker's virtual display) because Microsoft rejects headless logins —
+  // that was the actual cause of the sign-in failing on the server. Every
+  // other run stays headless: reusing already-saved cookies doesn't trip the
+  // same check, and headless is far lighter. This is why the login must
+  // happen here, in the environment that will use it: cookies are encrypted
+  // with this machine's key and Teams' IndexedDB tokens are written
+  // natively, so "Apply master login" copies a profile that actually works.
+  const isMasterLogin = job.name === MASTER_LOGIN_JOB_NAME && !job.groupId;
   const context = await chromium.launchPersistentContext(plan.dir, {
-    headless: true,
+    headless: !isMasterLogin,
     viewport: { width: 1280, height: 720 },
-    // Microsoft's login (and many sites) reject or misbehave for browsers
-    // that announce themselves as automation — that's a common cause of the
-    // "context id did not have a matching cookie" login failure. Present a
-    // normal Chrome and drop the automation banner so the sign-in flow that
-    // seeds these profiles can actually complete.
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    args: ["--disable-blink-features=AutomationControlled"],
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      // Chromium as root (the container's user) can't sandbox a headful
+      // browser; the virtual-display login needs this.
+      ...(isMasterLogin ? ["--no-sandbox"] : []),
+    ],
     ignoreDefaultArgs: ["--enable-automation"],
   });
   // A persistent context opens with one page already; reuse it.
