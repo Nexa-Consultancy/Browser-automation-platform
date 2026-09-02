@@ -3,6 +3,7 @@ import {
   createUser,
   deleteUser,
   getJob,
+  getTemplate,
   getUser,
   getUserPasswordPlain,
   listUsers,
@@ -12,23 +13,18 @@ import {
   updateUser,
 } from "@automation/db";
 import { stashCredential } from "@automation/queue";
-import { USER_LOGIN_CAPTURE_JOB_NAME } from "@automation/shared";
+import { AUTO_LOGIN_TEMPLATE_ID, USER_LOGIN_CAPTURE_JOB_NAME } from "@automation/shared";
 import { launchJob, stopJob } from "../services/launch.js";
 import { clearUserProfile, userLoginExists } from "../services/users.js";
 
 /**
- * Auto-fills email + password, then stops for any 2FA prompt to be
- * finished by hand through the live view, exactly the workflow already
- * used for the shared master login. Two steps are "click if visible"
- * rather than plain clicks because Microsoft doesn't always show them:
- * some accounts land straight on a password field after "Next" (others get
- * a "Sign in another way" tile chooser first, where "Password" itself is
- * just a tile label — filling straight into that fails, hence the click),
- * and "Stay signed in?" only appears if the browser hasn't already
- * answered it before. If Microsoft changes any of these labels, only this
- * constant needs editing.
+ * Fallback only — the real, editable script lives in the seeded "Auto
+ * login" step_templates row (see packages/db/src/schema.sql) and is read
+ * fresh on every launch by loginCaptureSteps() below, so a Settings edit
+ * takes effect immediately with no deploy. This copy only matters if that
+ * row is ever deleted.
  */
-const LOGIN_CAPTURE_STEPS = [
+const FALLBACK_LOGIN_CAPTURE_STEPS = [
   'open https://teams.microsoft.com/',
   'fill "Email, phone, or Skype" with {{email}}',
   'click "Next"',
@@ -40,6 +36,11 @@ const LOGIN_CAPTURE_STEPS = [
   'wait for 2 seconds',
   'click if visible "Yes"',
 ];
+
+async function loginCaptureSteps(): Promise<string[]> {
+  const template = await getTemplate(AUTO_LOGIN_TEMPLATE_ID);
+  return template && template.steps.length > 0 ? template.steps : FALLBACK_LOGIN_CAPTURE_STEPS;
+}
 
 /** A job in one of these states is no longer holding any browser open —
  * same terminal set the group scheduler uses. */
@@ -61,7 +62,7 @@ async function launchLoginCapture(user: { id: string; name: string; email: strin
   const { job, sessions } = await launchJob({
     name: USER_LOGIN_CAPTURE_JOB_NAME,
     targetUrl: "https://teams.microsoft.com/",
-    steps: LOGIN_CAPTURE_STEPS,
+    steps: await loginCaptureSteps(),
     users: [{ userName: user.name, data: { name: user.name, email: user.email, userId: user.id } }],
   });
   // One-shot Redis stash — never written to sessions.row_data / Postgres.

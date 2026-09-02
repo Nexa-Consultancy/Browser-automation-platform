@@ -26,7 +26,10 @@ function Field({
   );
 }
 
+type Tab = "templates" | "integrations" | "advanced";
+
 export function SettingsView() {
+  const [tab, setTab] = useState<Tab>("templates");
   const [s, setS] = useState<Settings>({});
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -184,18 +187,26 @@ export function SettingsView() {
 
   const on = (k: string) => s[k] === "true";
 
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "templates", label: "Templates" },
+    { id: "integrations", label: "Integrations" },
+    { id: "advanced", label: "Advanced" },
+  ];
+
   return (
     <div>
       <div className="job-toolbar">
         <div className="job-toolbar-title">
           <h2>Settings</h2>
-          <span className="hint">Applies to every run — scheduled and one-off.</span>
+          {tab !== "templates" && <span className="hint">Applies to every run — scheduled and one-off.</span>}
         </div>
-        <div className="job-toolbar-actions">
-          <button className="primary" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save settings"}
-          </button>
-        </div>
+        {tab !== "templates" && (
+          <div className="job-toolbar-actions">
+            <button className="primary" onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save settings"}
+            </button>
+          </div>
+        )}
       </div>
 
       {msg && (
@@ -204,8 +215,229 @@ export function SettingsView() {
         </div>
       )}
 
-      <div className="settings-grid">
-        {/* ---------- shared Teams master login ---------- */}
+      <div className="settings-layout">
+        <nav className="settings-nav">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={tab === t.id ? "active" : ""}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="settings-content">
+          {tab === "templates" && <TemplatesSettings />}
+
+          {tab === "integrations" && (
+            <div className="settings-grid">
+              {/* ---------- email alerts ---------- */}
+              <div className="card form-grid">
+                <div className="form-section">
+                  <div className="eyebrow">Email alerts</div>
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={on("ALERTS_ENABLED")}
+                      onChange={(e) => set("ALERTS_ENABLED", String(e.target.checked))}
+                    />
+                    <span className="switch-track" aria-hidden="true">
+                      <span className="switch-knob" />
+                    </span>
+                    <span className="switch-text">
+                      <strong>Alert me when something fails</strong>
+                      <span className="hint">
+                        Master switch for every channel on this tab — a failed step or a crashed session sends
+                        one message naming the group, the user, the error and a suggested first move to email,
+                        Discord and Telegram, whichever you've filled in below. No per-channel toggle needed —
+                        leaving one blank just skips it.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div className="form-two-col" style={{ marginTop: 14 }}>
+                    <Field label="SMTP host" hint="Gmail: smtp.gmail.com">
+                      <input
+                        type="text"
+                        value={s.SMTP_HOST ?? ""}
+                        onChange={(e) => set("SMTP_HOST", e.target.value)}
+                        placeholder="smtp.gmail.com"
+                      />
+                    </Field>
+                    <Field label="Port" hint="587 for STARTTLS, 465 for SSL">
+                      <input
+                        type="number"
+                        value={s.SMTP_PORT ?? ""}
+                        onChange={(e) => set("SMTP_PORT", e.target.value)}
+                      />
+                    </Field>
+                  </div>
+
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={on("SMTP_SECURE")}
+                      onChange={(e) => set("SMTP_SECURE", String(e.target.checked))}
+                    />
+                    <span className="switch-track" aria-hidden="true">
+                      <span className="switch-knob" />
+                    </span>
+                    <span className="switch-text">
+                      <strong>Implicit TLS (port 465)</strong>
+                      <span className="hint">
+                        Leave off for port 587. Getting this backwards is the usual cause of a connection that
+                        hangs or is refused.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div className="form-two-col" style={{ marginTop: 14 }}>
+                    <Field label="SMTP username" hint="Your full Gmail address">
+                      <input
+                        type="text"
+                        value={s.SMTP_USER ?? ""}
+                        onChange={(e) => set("SMTP_USER", e.target.value)}
+                        placeholder="you@gmail.com"
+                      />
+                    </Field>
+                    <Field
+                      label="SMTP password"
+                      hint={
+                        s.SMTP_PASS === SECRET_MARKER
+                          ? "A password is saved. Type to replace it."
+                          : "Gmail requires a 16-character App Password, not your normal one."
+                      }
+                    >
+                      <input
+                        type="password"
+                        value={s.SMTP_PASS === SECRET_MARKER ? "" : (s.SMTP_PASS ?? "")}
+                        placeholder={s.SMTP_PASS === SECRET_MARKER ? "•••••••• (unchanged)" : "abcd efgh ijkl mnop"}
+                        onChange={(e) => set("SMTP_PASS", e.target.value)}
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="form-two-col">
+                    <Field label="Send from" hint="Usually the same as the username">
+                      <input
+                        type="text"
+                        value={s.SMTP_FROM ?? ""}
+                        onChange={(e) => set("SMTP_FROM", e.target.value)}
+                        placeholder="you@gmail.com"
+                      />
+                    </Field>
+                    <Field label="Send alerts to" hint="Comma-separated for more than one">
+                      <input
+                        type="text"
+                        value={s.ALERT_TO ?? ""}
+                        onChange={(e) => set("ALERT_TO", e.target.value)}
+                        placeholder="you@gmail.com, ops@company.com"
+                      />
+                    </Field>
+                  </div>
+
+                  <div className="form-section" style={{ display: "flex", gap: 8 }}>
+                    <button onClick={testEmail} disabled={testing}>
+                      {testing ? "Sending…" : "Send test email"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ---------- Discord alerts ---------- */}
+              <div className="card form-grid">
+                <div className="form-section">
+                  <div className="eyebrow">Discord alerts</div>
+                  <div className="hint">
+                    In Discord: the channel's <strong>Settings → Integrations → Webhooks → New Webhook</strong>,
+                    then copy its URL and paste it below. No account linking — anyone in that channel sees every
+                    alert.
+                  </div>
+                  <Field
+                    label="Webhook URL"
+                    hint={s.DISCORD_WEBHOOK_URL === SECRET_MARKER ? "A webhook is saved. Type to replace it." : undefined}
+                  >
+                    <input
+                      type="password"
+                      value={s.DISCORD_WEBHOOK_URL === SECRET_MARKER ? "" : (s.DISCORD_WEBHOOK_URL ?? "")}
+                      placeholder={
+                        s.DISCORD_WEBHOOK_URL === SECRET_MARKER
+                          ? "•••••••• (unchanged)"
+                          : "https://discord.com/api/webhooks/…"
+                      }
+                      onChange={(e) => set("DISCORD_WEBHOOK_URL", e.target.value)}
+                    />
+                  </Field>
+                  <div className="form-section" style={{ display: "flex", gap: 8 }}>
+                    <button onClick={testDiscord} disabled={testingDiscord}>
+                      {testingDiscord ? "Sending…" : "Send test message"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ---------- Telegram alerts ---------- */}
+              <div className="card form-grid">
+                <div className="form-section">
+                  <div className="eyebrow">Telegram alerts</div>
+                  <div className="hint">
+                    Message <strong>@BotFather</strong> on Telegram → <code>/newbot</code> → copy the token it
+                    gives you. Then create (or open) the group your team is in, add that bot to it, and send any
+                    message in the group so Telegram knows the bot is there. Paste the token below, save, then
+                    click <strong>Find my chat</strong> to pick the group from what the bot has seen.
+                  </div>
+                  <Field
+                    label="Bot token"
+                    hint={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "A token is saved. Type to replace it." : undefined}
+                  >
+                    <input
+                      type="password"
+                      value={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "" : (s.TELEGRAM_BOT_TOKEN ?? "")}
+                      placeholder={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "•••••••• (unchanged)" : "123456:AAExample"}
+                      onChange={(e) => set("TELEGRAM_BOT_TOKEN", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Chat ID" hint="A group's id is negative, e.g. -1001234567890">
+                    <input
+                      type="text"
+                      value={s.TELEGRAM_CHAT_ID ?? ""}
+                      onChange={(e) => set("TELEGRAM_CHAT_ID", e.target.value)}
+                      placeholder="-1001234567890"
+                    />
+                  </Field>
+                  <div className="form-section" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button onClick={detectChats} disabled={detectingChats}>
+                      {detectingChats ? "Looking…" : "Find my chat"}
+                    </button>
+                    <button onClick={testTelegram} disabled={testingTelegram}>
+                      {testingTelegram ? "Sending…" : "Send test message"}
+                    </button>
+                  </div>
+                  {foundChats && (
+                    <div className="hint" style={{ marginTop: 6 }}>
+                      {foundChats.length === 0
+                        ? "Nothing found yet — send a message in the group first, then try again."
+                        : "Found: " + foundChats.map((c) => c.title).join(", ") + " — click one to use it:"}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                        {foundChats.map((c) => (
+                          <button type="button" key={c.id} onClick={() => set("TELEGRAM_CHAT_ID", c.id)}>
+                            {c.title} ({c.id})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "advanced" && (
+            <div className="settings-grid">
+              {/* ---------- shared Teams master login ---------- */}
         <div className="card form-grid">
           <div className="form-section">
             <div className="eyebrow">Teams master login</div>
@@ -332,206 +564,6 @@ export function SettingsView() {
           </div>
         </div>
 
-        {/* ---------- email alerts ---------- */}
-        <div className="card form-grid">
-          <div className="form-section">
-            <div className="eyebrow">Email alerts</div>
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={on("ALERTS_ENABLED")}
-                onChange={(e) => set("ALERTS_ENABLED", String(e.target.checked))}
-              />
-              <span className="switch-track" aria-hidden="true">
-                <span className="switch-knob" />
-              </span>
-              <span className="switch-text">
-                <strong>Alert me when something fails</strong>
-                <span className="hint">
-                  Master switch for every channel below — a failed step or a crashed session sends one message
-                  naming the group, the user, the error and a suggested first move to email, Discord and
-                  Telegram, whichever of those you've filled in below. No per-channel toggle needed — leaving one
-                  blank just skips it.
-                </span>
-              </span>
-            </label>
-
-            <div className="form-two-col" style={{ marginTop: 14 }}>
-              <Field label="SMTP host" hint="Gmail: smtp.gmail.com">
-                <input
-                  type="text"
-                  value={s.SMTP_HOST ?? ""}
-                  onChange={(e) => set("SMTP_HOST", e.target.value)}
-                  placeholder="smtp.gmail.com"
-                />
-              </Field>
-              <Field label="Port" hint="587 for STARTTLS, 465 for SSL">
-                <input type="number" value={s.SMTP_PORT ?? ""} onChange={(e) => set("SMTP_PORT", e.target.value)} />
-              </Field>
-            </div>
-
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={on("SMTP_SECURE")}
-                onChange={(e) => set("SMTP_SECURE", String(e.target.checked))}
-              />
-              <span className="switch-track" aria-hidden="true">
-                <span className="switch-knob" />
-              </span>
-              <span className="switch-text">
-                <strong>Implicit TLS (port 465)</strong>
-                <span className="hint">Leave off for port 587. Getting this backwards is the usual cause of a
-                  connection that hangs or is refused.</span>
-              </span>
-            </label>
-
-            <div className="form-two-col" style={{ marginTop: 14 }}>
-              <Field label="SMTP username" hint="Your full Gmail address">
-                <input
-                  type="text"
-                  value={s.SMTP_USER ?? ""}
-                  onChange={(e) => set("SMTP_USER", e.target.value)}
-                  placeholder="you@gmail.com"
-                />
-              </Field>
-              <Field
-                label="SMTP password"
-                hint={
-                  s.SMTP_PASS === SECRET_MARKER
-                    ? "A password is saved. Type to replace it."
-                    : "Gmail requires a 16-character App Password, not your normal one."
-                }
-              >
-                <input
-                  type="password"
-                  value={s.SMTP_PASS === SECRET_MARKER ? "" : (s.SMTP_PASS ?? "")}
-                  placeholder={s.SMTP_PASS === SECRET_MARKER ? "•••••••• (unchanged)" : "abcd efgh ijkl mnop"}
-                  onChange={(e) => set("SMTP_PASS", e.target.value)}
-                />
-              </Field>
-            </div>
-
-            <div className="form-two-col">
-              <Field label="Send from" hint="Usually the same as the username">
-                <input
-                  type="text"
-                  value={s.SMTP_FROM ?? ""}
-                  onChange={(e) => set("SMTP_FROM", e.target.value)}
-                  placeholder="you@gmail.com"
-                />
-              </Field>
-              <Field label="Send alerts to" hint="Comma-separated for more than one">
-                <input
-                  type="text"
-                  value={s.ALERT_TO ?? ""}
-                  onChange={(e) => set("ALERT_TO", e.target.value)}
-                  placeholder="you@gmail.com, ops@company.com"
-                />
-              </Field>
-            </div>
-
-            <div className="form-section" style={{ display: "flex", gap: 8 }}>
-              <button onClick={testEmail} disabled={testing}>
-                {testing ? "Sending…" : "Send test email"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ---------- Discord alerts ---------- */}
-        <div className="card form-grid">
-          <div className="form-section">
-            <div className="eyebrow">Discord alerts</div>
-            <div className="hint">
-              In Discord: the channel's <strong>Settings → Integrations → Webhooks → New Webhook</strong>, then
-              copy its URL and paste it below. No account linking — anyone in that channel sees every alert.
-            </div>
-            <Field
-              label="Webhook URL"
-              hint={
-                s.DISCORD_WEBHOOK_URL === SECRET_MARKER
-                  ? "A webhook is saved. Type to replace it."
-                  : undefined
-              }
-            >
-              <input
-                type="password"
-                value={s.DISCORD_WEBHOOK_URL === SECRET_MARKER ? "" : (s.DISCORD_WEBHOOK_URL ?? "")}
-                placeholder={
-                  s.DISCORD_WEBHOOK_URL === SECRET_MARKER
-                    ? "•••••••• (unchanged)"
-                    : "https://discord.com/api/webhooks/…"
-                }
-                onChange={(e) => set("DISCORD_WEBHOOK_URL", e.target.value)}
-              />
-            </Field>
-            <div className="form-section" style={{ display: "flex", gap: 8 }}>
-              <button onClick={testDiscord} disabled={testingDiscord}>
-                {testingDiscord ? "Sending…" : "Send test message"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ---------- Telegram alerts ---------- */}
-        <div className="card form-grid">
-          <div className="form-section">
-            <div className="eyebrow">Telegram alerts</div>
-            <div className="hint">
-              Message <strong>@BotFather</strong> on Telegram → <code>/newbot</code> → copy the token it gives you.
-              Then create (or open) the group your team is in, add that bot to it, and send any message in the
-              group so Telegram knows the bot is there. Paste the token below, save, then click{" "}
-              <strong>Find my chat</strong> to pick the group from what the bot has seen.
-            </div>
-            <Field
-              label="Bot token"
-              hint={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "A token is saved. Type to replace it." : undefined}
-            >
-              <input
-                type="password"
-                value={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "" : (s.TELEGRAM_BOT_TOKEN ?? "")}
-                placeholder={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "•••••••• (unchanged)" : "123456:AAExample"}
-                onChange={(e) => set("TELEGRAM_BOT_TOKEN", e.target.value)}
-              />
-            </Field>
-            <Field label="Chat ID" hint="A group's id is negative, e.g. -1001234567890">
-              <input
-                type="text"
-                value={s.TELEGRAM_CHAT_ID ?? ""}
-                onChange={(e) => set("TELEGRAM_CHAT_ID", e.target.value)}
-                placeholder="-1001234567890"
-              />
-            </Field>
-            <div className="form-section" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={detectChats} disabled={detectingChats}>
-                {detectingChats ? "Looking…" : "Find my chat"}
-              </button>
-              <button onClick={testTelegram} disabled={testingTelegram}>
-                {testingTelegram ? "Sending…" : "Send test message"}
-              </button>
-            </div>
-            {foundChats && (
-              <div className="hint" style={{ marginTop: 6 }}>
-                {foundChats.length === 0
-                  ? "Nothing found yet — send a message in the group first, then try again."
-                  : "Found: " +
-                    foundChats
-                      .map((c) => c.title)
-                      .join(", ") +
-                    " — click one to use it:"}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                  {foundChats.map((c) => (
-                    <button type="button" key={c.id} onClick={() => set("TELEGRAM_CHAT_ID", c.id)}>
-                      {c.title} ({c.id})
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* ---------- browser defaults ---------- */}
         <div className="card form-grid">
           <div className="form-section">
@@ -578,8 +610,9 @@ export function SettingsView() {
             </label>
           </div>
         </div>
-
-        <TemplatesSettings />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

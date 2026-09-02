@@ -13,3 +13,8 @@ export const MASTER_LOGIN_JOB_NAME = "Teams master login";
  * stops for the operator to finish "Stay signed in?"/2FA by hand via the
  * live view — same interactive-completion pattern as the master login. */
 export const USER_LOGIN_CAPTURE_JOB_NAME = "User login capture";
+
+/** The seeded step_templates row (see packages/db/src/schema.sql) that
+ * routes/users.ts reads for the login-capture script — editable from
+ * Settings → Templates like any other template. */
+export const AUTO_LOGIN_TEMPLATE_ID = "00000000-0000-0000-0000-000000000002";

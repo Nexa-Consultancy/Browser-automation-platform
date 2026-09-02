@@ -1,23 +1,126 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StepTemplate } from "../types";
 import * as api from "../api";
 
-/** Reusable step scripts for a group's Task — pick one instead of retyping
- * the same prompt (e.g. "Join meeting") every time a group is created. */
-export function TemplatesSettings() {
-  const [templates, setTemplates] = useState<StepTemplate[]>([]);
-  const [editingId, setEditingId] = useState<string | "new" | null>(null);
-  const [name, setName] = useState("");
-  const [steps, setSteps] = useState("");
+const AUTO_LOGIN_TEMPLATE_ID = "00000000-0000-0000-0000-000000000002";
+
+function TemplateModal({
+  template,
+  onClose,
+  onSaved,
+}: {
+  template?: StepTemplate;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const editing = !!template;
+  const [name, setName] = useState(template?.name ?? "");
+  const [steps, setSteps] = useState(template?.steps.join("\n") ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const backdropMouseDown = useRef(false);
+
+  const requestClose = useCallback(() => {
+    if (dirty && !confirm("Discard this template? Anything you have typed will be lost.")) return;
+    onClose();
+  }, [dirty, onClose]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [requestClose]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!name.trim()) return setError("Template name is required.");
+    if (!steps.trim()) return setError("At least one step is required.");
+
+    setBusy(true);
+    try {
+      if (editing) await api.updateTemplate(template!.id, { name, steps });
+      else await api.createTemplate({ name, steps });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        backdropMouseDown.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && backdropMouseDown.current) requestClose();
+        backdropMouseDown.current = false;
+      }}
+    >
+      <div className="modal-panel modal-form" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>{editing ? `Edit ${template!.name}` : "Add template"}</span>
+          <button type="button" onClick={requestClose}>
+            ✕
+          </button>
+        </div>
+        <form className="form-grid" onSubmit={submit} onChange={() => setDirty(true)}>
+          {error && <div className="error-banner">{error}</div>}
+          <div className="form-section">
+            <div className="form-row">
+              <label>Template name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Join meeting" />
+            </div>
+            <div className="form-row">
+              <label>Steps (one per line)</label>
+              <textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} />
+              <div className="hint">
+                Supported: click X · click if visible X · fill X with Y · fill if visible X with Y · type X ·
+                select X in Y · check/uncheck X · press KEY · wait for text "X" · wait N seconds · wait for video ·
+                wait for element "selector" · screenshot · open URL
+              </div>
+            </div>
+          </div>
+          <div className="form-section modal-actions">
+            <button type="button" onClick={requestClose} disabled={busy}>
+              Cancel
+            </button>
+            <button className="primary" type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Save template"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/** Reusable step scripts — for a group's Task (e.g. "Join meeting"), and
+ * one special one ("Auto login") that IS the script "Add user" runs to
+ * capture a Microsoft/Teams login (see packages/api/src/routes/users.ts,
+ * which reads this template by a fixed id on every launch). */
+export function TemplatesSettings() {
+  const [templates, setTemplates] = useState<StepTemplate[]>([]);
+  const [modal, setModal] = useState<"new" | StepTemplate | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       const res = await api.listTemplates();
       setTemplates(res.templates);
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoaded(true);
     }
   }, []);
 
@@ -25,113 +128,75 @@ export function TemplatesSettings() {
     void refresh();
   }, [refresh]);
 
-  function startNew() {
-    setEditingId("new");
-    setName("");
-    setSteps("");
-    setError(null);
-  }
-
-  function startEdit(t: StepTemplate) {
-    setEditingId(t.id);
-    setName(t.name);
-    setSteps(t.steps.join("\n"));
-    setError(null);
-  }
-
-  function cancel() {
-    setEditingId(null);
-    setError(null);
-  }
-
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      if (editingId === "new") await api.createTemplate({ name, steps });
-      else if (editingId) await api.updateTemplate(editingId, { name, steps });
-      setEditingId(null);
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function remove(t: StepTemplate) {
-    if (!confirm(`Delete template "${t.name}"? Groups already using it keep their own copy of the steps.`)) return;
-    setBusy(true);
+    const warning =
+      t.id === AUTO_LOGIN_TEMPLATE_ID
+        ? `Delete "${t.name}"? This is the script "Add user" runs to sign someone in — deleting it falls back to a built-in default.`
+        : `Delete template "${t.name}"? Groups already using it keep their own copy of the steps.`;
+    if (!confirm(warning)) return;
+    setBusy(t.id);
     try {
       await api.deleteTemplate(t.id);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   return (
-    <div className="card form-grid">
-      <div className="form-section">
-        <div className="eyebrow">Step templates</div>
-        <div className="hint">
-          Saved scripts you can drop straight into a group's Task instead of retyping the same prompt every time —
-          pick one from the dropdown when creating or editing a group.
+    <div>
+      <div className="job-toolbar">
+        <div className="job-toolbar-title">
+          <h2>Templates</h2>
+          <span className="hint">Reusable step scripts — pick one instead of retyping a group's Task.</span>
         </div>
+        <div className="job-toolbar-actions">
+          <button className="primary" onClick={() => setModal("new")}>
+            + Add template
+          </button>
+        </div>
+      </div>
 
-        {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
 
-        <div className="name-grid" style={{ marginTop: 10 }}>
-          {templates.map((t) => (
-            <div className="form-row" key={t.id}>
-              <label>{t.name}</label>
-              <div className="hint" style={{ marginTop: 0 }}>
+      {loaded && templates.length === 0 && <div className="empty-state">No templates yet.</div>}
+
+      <div className="group-list">
+        {templates.map((t) => (
+          <div className="card session-box" key={t.id}>
+            <div className="session-head">
+              <span className="name">{t.name}</span>
+            </div>
+            <div className="group-meta">
+              <span>
                 {t.steps.length} step{t.steps.length === 1 ? "" : "s"}
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" disabled={busy} onClick={() => startEdit(t)}>
-                  Edit
-                </button>
-                <button type="button" className="danger" disabled={busy} onClick={() => void remove(t)}>
-                  Delete
-                </button>
-              </div>
+              </span>
+              {t.id === AUTO_LOGIN_TEMPLATE_ID && <span className="hint">used by "Add user"</span>}
             </div>
-          ))}
-        </div>
-
-        {editingId ? (
-          <div className="form-section" style={{ marginTop: 14 }}>
-            <div className="form-row">
-              <label>Template name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Join meeting"
-              />
-            </div>
-            <div className="form-row">
-              <label>Steps (one per line)</label>
-              <textarea rows={6} value={steps} onChange={(e) => setSteps(e.target.value)} />
-            </div>
-            <div className="modal-actions">
-              <button type="button" onClick={cancel} disabled={busy}>
-                Cancel
+            <div className="session-controls">
+              <button disabled={busy === t.id} onClick={() => setModal(t)}>
+                Edit
               </button>
-              <button type="button" className="primary" onClick={() => void save()} disabled={busy}>
-                {busy ? "Saving…" : "Save template"}
+              <button className="danger" disabled={busy === t.id} onClick={() => void remove(t)}>
+                Delete
               </button>
             </div>
           </div>
-        ) : (
-          <button type="button" style={{ marginTop: 10 }} onClick={startNew}>
-            + Add template
-          </button>
-        )}
+        ))}
       </div>
+
+      {modal && (
+        <TemplateModal
+          template={modal === "new" ? undefined : modal}
+          onClose={() => setModal(null)}
+          onSaved={() => {
+            setModal(null);
+            void refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

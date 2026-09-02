@@ -158,3 +158,18 @@ VALUES (
   '["open {{url}}", "click if visible \"Continue on this browser\"", "click if visible \"Continue without audio or video\"", "fill if visible \"Type your name\" with {{name}}", "click \"Join\""]'::jsonb
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- The script "Add user" runs to capture a Microsoft/Teams login: fills
+-- email + password, handles the "Use your password" tile and "Stay signed
+-- in?" when Microsoft shows them (both optional — see the two "if visible"
+-- forms above), then stops for 2FA to be finished by hand. Editable here
+-- like any other template; packages/api/src/routes/users.ts reads this row
+-- by id at launch time, falling back to a hardcoded copy only if it's ever
+-- deleted.
+INSERT INTO step_templates (id, name, steps)
+VALUES (
+  '00000000-0000-0000-0000-000000000002',
+  'Auto login',
+  '["open https://teams.microsoft.com/", "fill \"Email, phone, or Skype\" with {{email}}", "click \"Next\"", "wait for 2 seconds", "click if visible \"Use your password\"", "wait for 1 seconds", "fill \"Password\" with {{password}}", "click \"Sign in\"", "wait for 2 seconds", "click if visible \"Yes\""]'::jsonb
+)
+ON CONFLICT (id) DO NOTHING;
