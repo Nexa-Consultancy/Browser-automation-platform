@@ -80,8 +80,6 @@ services:
       dockerfile: packages/dashboard/Dockerfile
     depends_on:
       - api
-    ports:
-      - "8080:80"
 
 volumes:
   pgdata:
