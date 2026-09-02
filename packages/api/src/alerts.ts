@@ -23,6 +23,14 @@ export function smtpConfigured(s: SettingsMap): boolean {
   return Boolean(s.SMTP_HOST && s.SMTP_PORT && s.SMTP_FROM && recipients(s).length > 0);
 }
 
+export function discordConfigured(s: SettingsMap): boolean {
+  return Boolean(s.DISCORD_WEBHOOK_URL);
+}
+
+export function telegramConfigured(s: SettingsMap): boolean {
+  return Boolean(s.TELEGRAM_BOT_TOKEN && s.TELEGRAM_CHAT_ID);
+}
+
 export function buildTransport(s: SettingsMap) {
   return nodemailer.createTransport({
     host: s.SMTP_HOST,
@@ -119,6 +127,87 @@ function renderEmail(a: AlertInput, when: string): { subject: string; html: stri
   return { subject, html, text };
 }
 
+interface DiscordPayload {
+  embeds: {
+    title: string;
+    description: string;
+    color: number;
+    fields: { name: string; value: string; inline?: boolean }[];
+    footer: { text: string };
+  }[];
+}
+
+function renderDiscord(a: AlertInput, when: string): DiscordPayload {
+  const who = [a.groupName, a.userName].filter(Boolean).join(" / ") || "system";
+  const fix = suggestion(a.message);
+  const fields: { name: string; value: string; inline?: boolean }[] = [
+    { name: "Source", value: a.source, inline: true },
+    { name: "Group", value: a.groupName ?? "—", inline: true },
+    { name: "User", value: a.userName ?? "—", inline: true },
+    { name: "Run ID", value: a.jobId ?? "—", inline: true },
+    { name: "Suggested first step", value: fix, inline: false },
+  ];
+  if (a.errorTrace) {
+    fields.push({ name: "Trace", value: "```" + a.errorTrace.slice(0, 1000) + "```", inline: false });
+  }
+  return {
+    embeds: [
+      {
+        title: `[${a.level}] ${who}`,
+        // Discord's embed description caps at 4096 chars.
+        description: a.message.slice(0, 3900),
+        color: a.level === "ERROR" ? 0xd9363e : 0x1d64d8,
+        fields,
+        footer: { text: when },
+      },
+    ],
+  };
+}
+
+async function sendDiscordAlert(webhookUrl: string, a: AlertInput, when: string): Promise<void> {
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(renderDiscord(a, when)),
+  });
+  if (!res.ok) throw new Error(`Discord webhook returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
+}
+
+function escapeHtmlForTelegram(s: string): string {
+  return s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
+}
+
+function renderTelegram(a: AlertInput, when: string): string {
+  const who = [a.groupName, a.userName].filter(Boolean).join(" / ") || "system";
+  const fix = suggestion(a.message);
+  const lines = [
+    `<b>[${a.level}] ${escapeHtmlForTelegram(who)}</b>`,
+    escapeHtmlForTelegram(a.message),
+    "",
+    `<b>When:</b> ${escapeHtmlForTelegram(when)}`,
+    `<b>Source:</b> ${escapeHtmlForTelegram(a.source)}`,
+    `<b>Group:</b> ${escapeHtmlForTelegram(a.groupName ?? "—")}`,
+    `<b>User:</b> ${escapeHtmlForTelegram(a.userName ?? "—")}`,
+    `<b>Run ID:</b> ${escapeHtmlForTelegram(a.jobId ?? "—")}`,
+    "",
+    `<b>Suggested first step:</b> ${escapeHtmlForTelegram(fix)}`,
+  ];
+  if (a.errorTrace) {
+    lines.push("", `<pre>${escapeHtmlForTelegram(a.errorTrace.slice(0, 800))}</pre>`);
+  }
+  // Telegram's hard cap on a single message.
+  return lines.join("\n").slice(0, 4096);
+}
+
+async function sendTelegramAlert(botToken: string, chatId: string, text: string): Promise<void> {
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
+  });
+  if (!res.ok) throw new Error(`Telegram API returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
+}
+
 /**
  * Records the event and, if alerting is on and configured, emails it.
  *
@@ -137,27 +226,59 @@ export async function raiseAlert(a: AlertInput): Promise<void> {
   }
 
   if (settings.ALERTS_ENABLED !== "true") return;
-  if (a.level !== "ERROR") return; // only failures are worth an inbox
-  if (!smtpConfigured(settings)) {
-    await markAlert(log.id, false, "SMTP is not fully configured");
-    return;
-  }
+  if (a.level !== "ERROR") return; // only failures are worth interrupting someone for
 
   const when = new Date(log.createdAt).toLocaleString("en-US", { timeZone: process.env.TZ || "UTC" });
-  const { subject, html, text } = renderEmail(a, when);
 
-  try {
-    await buildTransport(settings).sendMail({
-      from: settings.SMTP_FROM,
-      to: recipients(settings).join(", "),
-      subject,
-      html,
-      text,
-    });
-    await markAlert(log.id, true, null);
-  } catch (err) {
-    await markAlert(log.id, false, err instanceof Error ? err.message : String(err));
+  // Every configured channel gets tried independently — one being down (a
+  // bad webhook, an expired bot token) must never silence the others. The
+  // log row's own status reflects whether ANY channel actually got it out.
+  const attempts: { channel: string; ok: boolean; error?: string }[] = [];
+
+  if (smtpConfigured(settings)) {
+    try {
+      const { subject, html, text } = renderEmail(a, when);
+      await buildTransport(settings).sendMail({
+        from: settings.SMTP_FROM,
+        to: recipients(settings).join(", "),
+        subject,
+        html,
+        text,
+      });
+      attempts.push({ channel: "email", ok: true });
+    } catch (err) {
+      attempts.push({ channel: "email", ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
   }
+
+  if (discordConfigured(settings)) {
+    try {
+      await sendDiscordAlert(settings.DISCORD_WEBHOOK_URL, a, when);
+      attempts.push({ channel: "discord", ok: true });
+    } catch (err) {
+      attempts.push({ channel: "discord", ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  if (telegramConfigured(settings)) {
+    try {
+      await sendTelegramAlert(settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID, renderTelegram(a, when));
+      attempts.push({ channel: "telegram", ok: true });
+    } catch (err) {
+      attempts.push({ channel: "telegram", ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  if (attempts.length === 0) {
+    await markAlert(log.id, false, "No alert channel is configured (email, Discord or Telegram)");
+    return;
+  }
+  const ok = attempts.some((r) => r.ok);
+  const detail = attempts
+    .filter((r) => !r.ok)
+    .map((r) => `${r.channel}: ${r.error}`)
+    .join(" | ");
+  await markAlert(log.id, ok, detail || null);
 }
 
 /** Sends a "this works" email so the settings page can prove the config
@@ -183,6 +304,87 @@ export async function sendTestEmail(): Promise<{ ok: boolean; error?: string }> 
              </div>`,
     });
     return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Posts a "this works" message to the configured Discord channel. */
+export async function sendTestDiscord(): Promise<{ ok: boolean; error?: string }> {
+  const settings = await getSettings();
+  if (!discordConfigured(settings)) return { ok: false, error: "Paste a Discord webhook URL first." };
+  try {
+    const res = await fetch(settings.DISCORD_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "Browser Automation — test alert",
+            description: "Sent from the settings page. Discord alerting is configured correctly.",
+            color: 0x1d64d8,
+          },
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`Discord returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Posts a "this works" message to the configured Telegram chat. */
+export async function sendTestTelegram(): Promise<{ ok: boolean; error?: string }> {
+  const settings = await getSettings();
+  if (!telegramConfigured(settings)) return { ok: false, error: "Fill in the bot token and chat ID first." };
+  try {
+    await sendTelegramAlert(
+      settings.TELEGRAM_BOT_TOKEN,
+      settings.TELEGRAM_CHAT_ID,
+      "<b>Browser Automation — test alert</b>\nSent from the settings page. Telegram alerting is configured correctly.",
+    );
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Finds chat ids the bot can currently see, so setting up a group doesn't
+ * require manually reading raw Telegram API JSON. Only sees a chat AFTER
+ * someone has sent a message there since the bot joined — Telegram doesn't
+ * expose group membership any other way to a bot.
+ */
+export async function detectTelegramChats(): Promise<
+  { ok: true; chats: { id: string; title: string }[] } | { ok: false; error: string }
+> {
+  const settings = await getSettings();
+  if (!settings.TELEGRAM_BOT_TOKEN) return { ok: false, error: "Paste the bot token first, then save." };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${settings.TELEGRAM_BOT_TOKEN}/getUpdates?limit=100`);
+    if (!res.ok) throw new Error(`Telegram returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const body = (await res.json()) as {
+      ok: boolean;
+      description?: string;
+      result?: { message?: { chat?: { id: number; title?: string; first_name?: string; type: string } } }[];
+    };
+    if (!body.ok) return { ok: false, error: body.description ?? "Telegram rejected the request." };
+    const seen = new Map<string, string>();
+    for (const u of body.result ?? []) {
+      const chat = u.message?.chat;
+      if (!chat) continue;
+      const title = chat.title ?? chat.first_name ?? chat.type;
+      seen.set(String(chat.id), title);
+    }
+    if (seen.size === 0) {
+      return {
+        ok: false,
+        error:
+          "No chats seen yet — add the bot to your group, send any message in it, then try again.",
+      };
+    }
+    return { ok: true, chats: [...seen.entries()].map(([id, title]) => ({ id, title })) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

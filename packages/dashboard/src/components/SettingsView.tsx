@@ -32,6 +32,10 @@ export function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [testingDiscord, setTestingDiscord] = useState(false);
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [detectingChats, setDetectingChats] = useState(false);
+  const [foundChats, setFoundChats] = useState<{ id: string; title: string }[] | null>(null);
   const [teamsSignedIn, setTeamsSignedIn] = useState(false);
   const [teamsBusy, setTeamsBusy] = useState(false);
 
@@ -129,6 +133,50 @@ export function SettingsView() {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function testDiscord() {
+    setTestingDiscord(true);
+    setMsg(null);
+    try {
+      await api.saveSettings(s);
+      const res = await api.testDiscord();
+      setMsg(res.ok ? { kind: "ok", text: "Test message sent to Discord." } : { kind: "err", text: res.error ?? "Failed." });
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTestingDiscord(false);
+    }
+  }
+
+  async function testTelegram() {
+    setTestingTelegram(true);
+    setMsg(null);
+    try {
+      await api.saveSettings(s);
+      const res = await api.testTelegram();
+      setMsg(res.ok ? { kind: "ok", text: "Test message sent to Telegram." } : { kind: "err", text: res.error ?? "Failed." });
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTestingTelegram(false);
+    }
+  }
+
+  async function detectChats() {
+    setDetectingChats(true);
+    setMsg(null);
+    setFoundChats(null);
+    try {
+      await api.saveSettings(s);
+      const res = await api.telegramChats();
+      if (res.ok) setFoundChats(res.chats);
+      else setMsg({ kind: "err", text: res.error });
+    } catch (e) {
+      setMsg({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setDetectingChats(false);
     }
   }
 
@@ -298,10 +346,12 @@ export function SettingsView() {
                 <span className="switch-knob" />
               </span>
               <span className="switch-text">
-                <strong>Email me when something fails</strong>
+                <strong>Alert me when something fails</strong>
                 <span className="hint">
-                  A failed step or a crashed session sends one email naming the group, the user, the error and a
-                  suggested first move.
+                  Master switch for every channel below — a failed step or a crashed session sends one message
+                  naming the group, the user, the error and a suggested first move to email, Discord and
+                  Telegram, whichever of those you've filled in below. No per-channel toggle needed — leaving one
+                  blank just skips it.
                 </span>
               </span>
             </label>
@@ -386,6 +436,99 @@ export function SettingsView() {
                 {testing ? "Sending…" : "Send test email"}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* ---------- Discord alerts ---------- */}
+        <div className="card form-grid">
+          <div className="form-section">
+            <div className="eyebrow">Discord alerts</div>
+            <div className="hint">
+              In Discord: the channel's <strong>Settings → Integrations → Webhooks → New Webhook</strong>, then
+              copy its URL and paste it below. No account linking — anyone in that channel sees every alert.
+            </div>
+            <Field
+              label="Webhook URL"
+              hint={
+                s.DISCORD_WEBHOOK_URL === SECRET_MARKER
+                  ? "A webhook is saved. Type to replace it."
+                  : undefined
+              }
+            >
+              <input
+                type="password"
+                value={s.DISCORD_WEBHOOK_URL === SECRET_MARKER ? "" : (s.DISCORD_WEBHOOK_URL ?? "")}
+                placeholder={
+                  s.DISCORD_WEBHOOK_URL === SECRET_MARKER
+                    ? "•••••••• (unchanged)"
+                    : "https://discord.com/api/webhooks/…"
+                }
+                onChange={(e) => set("DISCORD_WEBHOOK_URL", e.target.value)}
+              />
+            </Field>
+            <div className="form-section" style={{ display: "flex", gap: 8 }}>
+              <button onClick={testDiscord} disabled={testingDiscord}>
+                {testingDiscord ? "Sending…" : "Send test message"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ---------- Telegram alerts ---------- */}
+        <div className="card form-grid">
+          <div className="form-section">
+            <div className="eyebrow">Telegram alerts</div>
+            <div className="hint">
+              Message <strong>@BotFather</strong> on Telegram → <code>/newbot</code> → copy the token it gives you.
+              Then create (or open) the group your team is in, add that bot to it, and send any message in the
+              group so Telegram knows the bot is there. Paste the token below, save, then click{" "}
+              <strong>Find my chat</strong> to pick the group from what the bot has seen.
+            </div>
+            <Field
+              label="Bot token"
+              hint={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "A token is saved. Type to replace it." : undefined}
+            >
+              <input
+                type="password"
+                value={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "" : (s.TELEGRAM_BOT_TOKEN ?? "")}
+                placeholder={s.TELEGRAM_BOT_TOKEN === SECRET_MARKER ? "•••••••• (unchanged)" : "123456:AAExample"}
+                onChange={(e) => set("TELEGRAM_BOT_TOKEN", e.target.value)}
+              />
+            </Field>
+            <Field label="Chat ID" hint="A group's id is negative, e.g. -1001234567890">
+              <input
+                type="text"
+                value={s.TELEGRAM_CHAT_ID ?? ""}
+                onChange={(e) => set("TELEGRAM_CHAT_ID", e.target.value)}
+                placeholder="-1001234567890"
+              />
+            </Field>
+            <div className="form-section" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={detectChats} disabled={detectingChats}>
+                {detectingChats ? "Looking…" : "Find my chat"}
+              </button>
+              <button onClick={testTelegram} disabled={testingTelegram}>
+                {testingTelegram ? "Sending…" : "Send test message"}
+              </button>
+            </div>
+            {foundChats && (
+              <div className="hint" style={{ marginTop: 6 }}>
+                {foundChats.length === 0
+                  ? "Nothing found yet — send a message in the group first, then try again."
+                  : "Found: " +
+                    foundChats
+                      .map((c) => c.title)
+                      .join(", ") +
+                    " — click one to use it:"}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                  {foundChats.map((c) => (
+                    <button type="button" key={c.id} onClick={() => set("TELEGRAM_CHAT_ID", c.id)}>
+                      {c.title} ({c.id})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

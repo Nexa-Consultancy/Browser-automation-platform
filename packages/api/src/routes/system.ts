@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getSettings, listLogs, redactSettings, updateSettings, type LogLevel } from "@automation/db";
 import { MASTER_LOGIN_JOB_NAME, buildDefaultUsers, serverTimezone } from "@automation/shared";
-import { sendTestEmail } from "../alerts.js";
+import { sendTestEmail, sendTestDiscord, sendTestTelegram, detectTelegramChats } from "../alerts.js";
 import { launchJob } from "../services/launch.js";
 import { clearMaster, masterLoginExists, PROFILES_DIR } from "../services/profiles.js";
 import { enqueueBakeMaster } from "@automation/queue";
@@ -42,6 +42,11 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/api/settings/test-email", async () => sendTestEmail());
+  app.post("/api/settings/test-discord", async () => sendTestDiscord());
+  app.post("/api/settings/test-telegram", async () => sendTestTelegram());
+  // Lists chats the Telegram bot can currently see, so setting up a group
+  // doesn't require reading raw getUpdates JSON by hand.
+  app.get("/api/settings/telegram-chats", async () => detectTelegramChats());
 
   // Whether the one shared Teams account has been signed in yet.
   app.get("/api/teams-login/status", async () => ({ signedIn: masterLoginExists() }));

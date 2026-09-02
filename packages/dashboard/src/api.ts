@@ -189,6 +189,23 @@ export async function testEmail(): Promise<{ ok: boolean; error?: string }> {
   return json(await fetch(`${API_BASE}/api/settings/test-email`, { method: "POST" }));
 }
 
+export async function testDiscord(): Promise<{ ok: boolean; error?: string }> {
+  return json(await fetch(`${API_BASE}/api/settings/test-discord`, { method: "POST" }));
+}
+
+export async function testTelegram(): Promise<{ ok: boolean; error?: string }> {
+  return json(await fetch(`${API_BASE}/api/settings/test-telegram`, { method: "POST" }));
+}
+
+/** Chats the Telegram bot can currently see (only chats it's already
+ * received a message in) — lets the settings page offer a pick list
+ * instead of making someone copy a raw chat id out of JSON. */
+export async function telegramChats(): Promise<
+  { ok: true; chats: { id: string; title: string }[] } | { ok: false; error: string }
+> {
+  return json(await fetch(`${API_BASE}/api/settings/telegram-chats`));
+}
+
 export async function getLogs(level?: string): Promise<{ logs: SystemLog[] }> {
   const q = level ? `?level=${encodeURIComponent(level)}` : "";
   return json(await fetch(`${API_BASE}/api/logs${q}`));

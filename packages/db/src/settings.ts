@@ -21,6 +21,11 @@ export const SETTING_DEFAULTS: SettingsMap = {
   SMTP_PASS: "",
   SMTP_FROM: "",
   ALERT_TO: "", // comma-separated
+  // --- Discord alerting (Incoming Webhook, no OAuth) ---
+  DISCORD_WEBHOOK_URL: "",
+  // --- Telegram alerting (Bot API) ---
+  TELEGRAM_BOT_TOKEN: "",
+  TELEGRAM_CHAT_ID: "", // negative for a group chat
   // --- browser defaults ---
   BROWSER_TIMEOUT_MS: "30000",
   VIEWPORT_WIDTH: "1280",
@@ -29,7 +34,7 @@ export const SETTING_DEFAULTS: SettingsMap = {
 };
 
 /** Keys whose values must never be sent back to the browser. */
-export const SECRET_KEYS = new Set(["PROXY_PASS", "SMTP_PASS"]);
+export const SECRET_KEYS = new Set(["PROXY_PASS", "SMTP_PASS", "DISCORD_WEBHOOK_URL", "TELEGRAM_BOT_TOKEN"]);
 
 export async function getSettings(): Promise<SettingsMap> {
   const { rows } = await pool.query<{ key: string; value: string }>(`SELECT key, value FROM settings`);
