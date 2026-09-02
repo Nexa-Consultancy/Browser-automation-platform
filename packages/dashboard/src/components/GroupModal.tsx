@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GroupWithSchedule } from "../types";
+import type { GroupWithSchedule, PlatformUser } from "../types";
 import * as api from "../api";
 
 const TASK_PLACEHOLDER = `fill Email with {{name}}@example.com
@@ -77,6 +77,8 @@ export function GroupModal({
   const [steps, setSteps] = useState(initialSteps);
   const [userCount, setUserCount] = useState(group?.userNames.length ?? 2);
   const [names, setNames] = useState<string[]>(group?.userNames ?? ["", ""]);
+  const [allUsers, setAllUsers] = useState<PlatformUser[]>([]);
+  const [linkedIds, setLinkedIds] = useState<string[]>(group?.userIds ?? []);
   const [startTime, setStartTime] = useState(group?.startTime ?? "17:00");
   const [endTime, setEndTime] = useState(group?.endTime ?? "21:00");
   const [days, setDays] = useState<number[]>(group?.days ?? [1, 2, 3, 4, 5]);
@@ -93,6 +95,10 @@ export function GroupModal({
   // far worse than one extra confirm.
   const [dirty, setDirty] = useState(false);
   const backdropMouseDown = useRef(false);
+
+  useEffect(() => {
+    void api.listUsers().then((r) => setAllUsers(r.users)).catch(() => {});
+  }, []);
 
   const requestClose = useCallback(() => {
     if (dirty && !confirm("Discard this group? Anything you have typed will be lost.")) return;
@@ -119,13 +125,17 @@ export function GroupModal({
   }, [requestClose]);
 
   function changeUserCount(raw: number) {
-    const count = Math.max(1, Math.min(MAX_USERS, Math.floor(raw) || 1));
+    const count = Math.max(0, Math.min(MAX_USERS, Math.floor(raw) || 0));
     setUserCount(count);
     setNames((prev) => resizeNames(prev, count));
   }
 
   function changeName(index: number, value: string) {
     setNames((prev) => prev.map((n, i) => (i === index ? value : n)));
+  }
+
+  function toggleLinkedUser(id: string) {
+    setLinkedIds((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
   }
 
   function toggleDay(value: number) {
@@ -141,6 +151,10 @@ export function GroupModal({
     const filled = names.map((n) => n.trim());
     if (filled.some((n) => !n)) {
       setError(`Enter a name for all ${userCount} user(s) — every user in the group needs one.`);
+      return;
+    }
+    if (filled.length === 0 && linkedIds.length === 0) {
+      setError("Add at least one user — a free-text name or a linked user.");
       return;
     }
     if (days.length === 0) {
@@ -159,6 +173,7 @@ export function GroupModal({
         targetUrl,
         steps,
         userNames: filled,
+        userIds: linkedIds,
         startTime,
         endTime,
         leadMinutes,
@@ -248,7 +263,7 @@ export function GroupModal({
               <label>Number of users</label>
               <input
                 type="number"
-                min={1}
+                min={0}
                 max={MAX_USERS}
                 value={userCount}
                 onChange={(e) => changeUserCount(Number(e.target.value))}
@@ -270,6 +285,30 @@ export function GroupModal({
             <div className="hint">
               One browser session per user, fully isolated. Each name is available in the task as {"{{name}}"}.
             </div>
+
+            {allUsers.length > 0 && (
+              <>
+                <div className="eyebrow" style={{ marginTop: 18 }}>
+                  Linked users
+                </div>
+                <div className="name-grid">
+                  {allUsers.map((u) => (
+                    <label className={`day-chip${linkedIds.includes(u.id) ? " on" : ""}`} key={u.id}>
+                      <input
+                        type="checkbox"
+                        checked={linkedIds.includes(u.id)}
+                        onChange={() => toggleLinkedUser(u.id)}
+                      />
+                      {u.name} {u.signedIn ? "" : "(not signed in)"}
+                    </label>
+                  ))}
+                </div>
+                <div className="hint">
+                  Each already has their own real Teams login — they join already signed in as themselves, not as a
+                  typed guest name. Add more under the Users panel.
+                </div>
+              </>
+            )}
           </div>
 
           <div className="form-section">

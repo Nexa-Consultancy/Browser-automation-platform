@@ -30,12 +30,29 @@ export function masterProfileDir(): string {
   return path.join(ROOT, "_master");
 }
 
+/** A reusable, named PlatformUser's own persistent profile — independent of
+ * any group or master dir, so their identity travels with them regardless
+ * of which group runs them. See packages/shared/src/csv.ts's buildLinkedUsers,
+ * which is what puts session.data.userId here in the first place. */
+export function userProfileDir(userId: string): string {
+  return path.join(ROOT, "_user", userId);
+}
+
 export function profilePlanFor(job: Job, session: SessionRow, persistEnabled: boolean): ProfilePlan {
   // The master-login run signs the one shared account in; its profile must
   // persist (it is the source every group is seeded from) and never be the
   // per-group path.
   if (job.name === MASTER_LOGIN_JOB_NAME && !job.groupId) {
     return { dir: masterProfileDir(), persistent: true };
+  }
+  // A linked PlatformUser's identity travels with them regardless of which
+  // job or group is running them — checked before the group-scoped branch
+  // below, so a linked user inside a group run still resolves to THEIR OWN
+  // dir, never <groupId>/<index>. Also handles the login-capture job itself
+  // (which has no groupId), since it carries the same userId field.
+  const userId = session.rowData.userId;
+  if (userId) {
+    return { dir: userProfileDir(userId), persistent: true };
   }
   if (persistEnabled && job.groupId) {
     return { dir: path.join(ROOT, job.groupId, String(session.userIndex)), persistent: true };

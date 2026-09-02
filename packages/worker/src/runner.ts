@@ -9,9 +9,10 @@ import {
   setVideoWaitStarted,
   bumpTotalSteps,
 } from "@automation/db";
-import { newRedisConnection, screencastChannel, screencastLastFrameKey } from "@automation/queue";
+import { newRedisConnection, screencastChannel, screencastLastFrameKey, takeCredential } from "@automation/queue";
 import {
   MASTER_LOGIN_JOB_NAME,
+  USER_LOGIN_CAPTURE_JOB_NAME,
   parseSteps,
   type Job,
   type SessionRow,
@@ -133,6 +134,11 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // with this machine's key and Teams' IndexedDB tokens are written
   // natively, so "Apply master login" copies a profile that actually works.
   const isMasterLogin = job.name === MASTER_LOGIN_JOB_NAME && !job.groupId;
+  // Same reasoning as the master login above (Microsoft rejects headless
+  // logins, and a human needs to see the screen to finish "Stay signed
+  // in?"/2FA by hand) — a login-capture run for a reusable PlatformUser
+  // needs the same real, visible browser.
+  const isLoginCapture = job.name === USER_LOGIN_CAPTURE_JOB_NAME && !job.groupId;
   // Route the browser through the proxy configured in Settings, if any, so
   // its traffic exits from there rather than this server's own IP. This is
   // what makes "appear to be somewhere else" actually work — and the way to
@@ -140,7 +146,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // at a proxy elsewhere and see if the same login succeeds.
   const proxy = proxyFromSettings(settings);
   const context = await chromium.launchPersistentContext(plan.dir, {
-    headless: !isMasterLogin,
+    headless: !isMasterLogin && !isLoginCapture,
     viewport: { width: 1280, height: 720 },
     ...(proxy ? { proxy } : {}),
     userAgent:
@@ -149,7 +155,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
       "--disable-blink-features=AutomationControlled",
       // Chromium as root (the container's user) can't sandbox a headful
       // browser; the virtual-display login needs this.
-      ...(isMasterLogin ? ["--no-sandbox"] : []),
+      ...(isMasterLogin || isLoginCapture ? ["--no-sandbox"] : []),
     ],
     ignoreDefaultArgs: ["--enable-automation"],
   });
@@ -164,7 +170,15 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // {{url}} defaults to the job's Target URL so "open {{url}}" works with
   // no CSV at all; a CSV column literally named "url" overrides it per user
   // (e.g. per-user meeting links).
-  const row = { url: job.targetUrl, ...session.rowData };
+  const row: Record<string, string> = { url: job.targetUrl, ...session.rowData };
+  // A login-capture user's password never touches Postgres — it rides a
+  // one-shot Redis stash (GETDEL: read exactly once, self-expiring) keyed
+  // by this session's id, and only ever lives in this local variable for
+  // the lifetime of the run. See packages/queue/src/credentials.ts.
+  if (isLoginCapture) {
+    const password = await takeCredential(session.id);
+    if (password) row.password = password;
+  }
 
   const control = subscribeControl(session.id, (msg) => {
     if (msg.type === "stop") {

@@ -7,6 +7,7 @@ interface GroupDbRow {
   target_url: string;
   steps: string[];
   user_names: string[];
+  user_ids: string[];
   start_time: string;
   end_time: string;
   lead_minutes: number;
@@ -28,6 +29,7 @@ function toGroup(r: GroupDbRow): Group {
     targetUrl: r.target_url,
     steps: r.steps,
     userNames: r.user_names,
+    userIds: r.user_ids,
     startTime: r.start_time,
     endTime: r.end_time,
     leadMinutes: r.lead_minutes,
@@ -48,6 +50,7 @@ export async function createGroup(input: {
   targetUrl: string;
   steps: string[];
   userNames: string[];
+  userIds: string[];
   startTime: string;
   endTime: string;
   leadMinutes: number;
@@ -56,14 +59,15 @@ export async function createGroup(input: {
   enabled: boolean;
 }): Promise<Group> {
   const { rows } = await pool.query<GroupDbRow>(
-    `INSERT INTO groups (name, target_url, steps, user_names, start_time, end_time, lead_minutes, days, timezone, enabled)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, $8::jsonb, $9, $10)
+    `INSERT INTO groups (name, target_url, steps, user_names, user_ids, start_time, end_time, lead_minutes, days, timezone, enabled)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11)
      RETURNING *`,
     [
       input.name,
       input.targetUrl,
       JSON.stringify(input.steps),
       JSON.stringify(input.userNames),
+      JSON.stringify(input.userIds),
       input.startTime,
       input.endTime,
       input.leadMinutes,
@@ -91,6 +95,7 @@ export async function updateGroup(
     targetUrl: string;
     steps: string[];
     userNames: string[];
+    userIds: string[];
     startTime: string;
     endTime: string;
     leadMinutes: number;
@@ -103,7 +108,7 @@ export async function updateGroup(
     `UPDATE groups
         SET name = $2, target_url = $3, steps = $4::jsonb, user_names = $5::jsonb,
             start_time = $6, end_time = $7, days = $8::jsonb, timezone = $9, enabled = $10,
-            lead_minutes = $11
+            lead_minutes = $11, user_ids = $12::jsonb
       WHERE id = $1
       RETURNING *`,
     [
@@ -118,6 +123,7 @@ export async function updateGroup(
       input.timezone,
       input.enabled,
       input.leadMinutes,
+      JSON.stringify(input.userIds),
     ],
   );
   return rows[0] ? toGroup(rows[0]) : null;

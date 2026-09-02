@@ -70,6 +70,17 @@ export type InputAction =
   | { kind: "key"; key: string }
   | { kind: "scroll"; deltaY: number };
 
+/** A reusable, named identity with its own real, persistent Microsoft/Teams
+ * login. Mirrors packages/shared/src/types.ts. */
+export interface PlatformUser {
+  id: string;
+  name: string;
+  email: string;
+  signedIn: boolean;
+  activeJobId: string | null;
+  createdAt: string;
+}
+
 /** A saved link + task + user roster the server runs by itself on a daily
  * wall-clock window. Mirrors packages/shared/src/types.ts. */
 export interface Group {
@@ -78,6 +89,9 @@ export interface Group {
   targetUrl: string;
   steps: string[];
   userNames: string[];
+  /** Linked PlatformUsers — each already has their own real login, additive
+   * to the free-text userNames roster above. */
+  userIds: string[];
   /** The time the thing you're automating actually happens, as typed. */
   startTime: string; // "HH:MM", 24-hour, local to `timezone`
   /** Start this many minutes BEFORE startTime. 0 = exactly on time. */
@@ -115,6 +129,7 @@ export interface GroupSchedule {
 
 export interface GroupWithSchedule extends Group {
   schedule: GroupSchedule;
+  linkedUsers: { id: string; name: string; signedIn: boolean }[];
 }
 
 /** One past run, with its outcome rolled up — the row shape behind the

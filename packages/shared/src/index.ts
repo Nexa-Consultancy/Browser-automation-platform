@@ -7,3 +7,9 @@ export * from "./time.js";
  * the worker routes its profile to the master dir and the job view labels it
  * clearly. Signing in here once seeds every group via "Apply master login". */
 export const MASTER_LOGIN_JOB_NAME = "Teams master login";
+
+/** A one-user run whose profile is a specific PlatformUser's own persistent
+ * dir (see the worker's profilePlanFor). Auto-fills email/password, then
+ * stops for the operator to finish "Stay signed in?"/2FA by hand via the
+ * live view — same interactive-completion pattern as the master login. */
+export const USER_LOGIN_CAPTURE_JOB_NAME = "User login capture";

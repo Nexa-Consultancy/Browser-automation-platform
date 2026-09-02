@@ -6,3 +6,4 @@ export * from "./groups.js";
 export * from "./history.js";
 export * from "./settings.js";
 export * from "./logs.js";
+export * from "./users.js";

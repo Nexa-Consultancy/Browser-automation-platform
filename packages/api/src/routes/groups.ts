@@ -3,6 +3,7 @@ import {
   createGroup,
   deleteGroup,
   getGroup,
+  getUsersByIds,
   listGroups,
   setGroupActiveJob,
   setGroupEnabled,
@@ -11,6 +12,7 @@ import {
 } from "@automation/db";
 import {
   ALL_DAYS,
+  buildLinkedUsers,
   buildNamedUsers,
   effectiveStartMinutes,
   formatHhMm,
@@ -24,6 +26,7 @@ import {
 } from "@automation/shared";
 import { launchJob, normalizeSteps, stopJob } from "../services/launch.js";
 import { clearGroupProfiles, seedGroupFromMaster, masterLoginExists } from "../services/profiles.js";
+import { userLoginExists } from "../services/users.js";
 
 const MAX_USERS_PER_GROUP = 200;
 
@@ -32,6 +35,7 @@ interface CreateGroupBody {
   targetUrl?: string;
   steps?: string;
   userNames?: string[];
+  userIds?: string[];
   startTime?: string;
   endTime?: string;
   leadMinutes?: number;
@@ -42,13 +46,15 @@ interface CreateGroupBody {
 
 /** Attaches the live "where are we in the window right now" read-out the
  * dashboard shows, computed server-side so the countdown reflects the
- * server's clock — the only clock that actually fires these. */
-function withSchedule(group: Group): GroupWithSchedule {
+ * server's clock — the only clock that actually fires these — plus display
+ * info for this group's linked PlatformUsers. */
+async function withSchedule(group: Group): Promise<GroupWithSchedule> {
   const now = zonedNow(group.timezone);
   // Schedule against the lead-adjusted start, not the time the user typed —
   // that's the whole point of the lead.
   const start = effectiveStartMinutes(parseHhMm(group.startTime), group.leadMinutes);
   const state = windowStateAt(start, parseHhMm(group.endTime), now, group.days);
+  const linked = await getUsersByIds(group.userIds);
   return {
     ...group,
     schedule: {
@@ -59,6 +65,7 @@ function withSchedule(group: Group): GroupWithSchedule {
       minutesUntilEnd: state.minutesUntilEnd,
       localTime: formatHhMm(now.minutes),
     },
+    linkedUsers: linked.map((u) => ({ id: u.id, name: u.name, signedIn: userLoginExists(u.id) })),
   };
 }
 
@@ -67,6 +74,7 @@ interface ParsedGroup {
   targetUrl: string;
   steps: string[];
   userNames: string[];
+  userIds: string[];
   startTime: string;
   endTime: string;
   leadMinutes: number;
@@ -91,8 +99,11 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
   const userNames = (Array.isArray(body.userNames) ? body.userNames : [])
     .map((n) => String(n ?? "").trim())
     .filter(Boolean);
-  if (userNames.length === 0) return { error: "at least one user name is required" };
-  if (userNames.length > MAX_USERS_PER_GROUP) {
+  const userIds = [...new Set((Array.isArray(body.userIds) ? body.userIds : []).map((id) => String(id ?? "").trim()).filter(Boolean))];
+  if (userNames.length + userIds.length === 0) {
+    return { error: "at least one user name or linked user is required" };
+  }
+  if (userNames.length + userIds.length > MAX_USERS_PER_GROUP) {
     return { error: `too many users (max ${MAX_USERS_PER_GROUP} per group)` };
   }
 
@@ -128,6 +139,7 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
       targetUrl,
       steps,
       userNames,
+      userIds,
       startTime,
       endTime,
       leadMinutes,
@@ -141,25 +153,28 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
 export async function groupRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/groups", async () => {
     const groups = await listGroups();
-    return { groups: groups.map(withSchedule), serverTimezone: serverTimezone() };
+    return { groups: await Promise.all(groups.map(withSchedule)), serverTimezone: serverTimezone() };
   });
 
   app.get("/api/groups/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const group = await getGroup(id);
     if (!group) return reply.code(404).send({ error: "not found" });
-    return { group: withSchedule(group), serverTimezone: serverTimezone() };
+    return { group: await withSchedule(group), serverTimezone: serverTimezone() };
   });
 
   app.post("/api/groups", async (req, reply) => {
     const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
+    if ((await getUsersByIds(parsed.value.userIds)).length !== parsed.value.userIds.length) {
+      return reply.code(400).send({ error: "one or more selected users no longer exist" });
+    }
 
     const group = await createGroup({
       ...parsed.value,
       name: parsed.value.name || `Group ${new Date().toISOString()}`,
     });
-    reply.code(201).send({ group: withSchedule(group) });
+    reply.code(201).send({ group: await withSchedule(group) });
   });
 
   /**
@@ -175,13 +190,16 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
 
     const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
+    if ((await getUsersByIds(parsed.value.userIds)).length !== parsed.value.userIds.length) {
+      return reply.code(400).send({ error: "one or more selected users no longer exist" });
+    }
 
     const group = await updateGroup(id, {
       ...parsed.value,
       name: parsed.value.name || existing.name,
     });
     if (!group) return reply.code(404).send({ error: "not found" });
-    reply.send({ group: withSchedule(group) });
+    reply.send({ group: await withSchedule(group) });
   });
 
   app.patch("/api/groups/:id", async (req, reply) => {
@@ -194,7 +212,7 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     if (!group) return reply.code(404).send({ error: "not found" });
     // Turning a group off while its window is live is handled by the
     // scheduler's next tick, which stops the run it's holding open.
-    return { group: withSchedule(group) };
+    return { group: await withSchedule(group) };
   });
 
   // Wipe a group's saved logins/cookies. The next run for each user starts
@@ -259,11 +277,12 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ error: "this group already has a run in progress" });
     }
 
+    const linked = await getUsersByIds(group.userIds);
     const { job } = await launchJob({
       name: `${group.name} — manual run`,
       targetUrl: group.targetUrl,
       steps: group.steps,
-      users: buildNamedUsers(group.userNames),
+      users: [...buildNamedUsers(group.userNames), ...buildLinkedUsers(linked)],
       groupId: group.id,
     });
     const claimed = await setGroupActiveJob(group.id, job.id);

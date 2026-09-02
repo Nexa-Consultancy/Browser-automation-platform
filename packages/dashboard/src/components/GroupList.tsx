@@ -213,6 +213,15 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                 <span>
                   {g.userNames.length} user{g.userNames.length === 1 ? "" : "s"}: {g.userNames.join(", ")}
                 </span>
+                {g.linkedUsers.length > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>
+                      {g.linkedUsers.length} linked user{g.linkedUsers.length === 1 ? "" : "s"} (own login):{" "}
+                      {g.linkedUsers.map((u) => u.name).join(", ")}
+                    </span>
+                  </>
+                )}
               </div>
 
               <div className="group-countdown">
@@ -269,7 +278,7 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                   title={
                     live
                       ? "Stop the run before applying the master login"
-                      : "Seed every user from the shared Teams master login so they join already signed in"
+                      : "Seed this group's free-text user names (not its linked users, who already have their own login) from the shared Teams master login"
                   }
                   onClick={() =>
                     act(g.id, async () => {
@@ -286,7 +295,7 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                   title={
                     live
                       ? "Stop the run before clearing saved logins"
-                      : "Delete this group's saved cookies/logins so the next run starts signed out"
+                      : "Delete cookies/logins saved for this group's free-text user names (not its linked users — clear one of those from the Users panel instead)"
                   }
                   onClick={() => {
                     if (confirm(`Clear saved logins for "${g.name}"? Every user in it will start the next run signed out.`)) {

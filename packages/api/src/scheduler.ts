@@ -1,5 +1,6 @@
-import { claimGroupOccurrence, getJob, listGroups, releaseGroupRun } from "@automation/db";
+import { claimGroupOccurrence, getJob, getUsersByIds, listGroups, releaseGroupRun } from "@automation/db";
 import {
+  buildLinkedUsers,
   buildNamedUsers,
   effectiveStartMinutes,
   parseHhMm,
@@ -116,7 +117,8 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
   if (state.inWindow) {
     if (group.activeJobId || group.lastOccurrenceKey === state.occurrenceKey) return;
 
-    const users = buildNamedUsers(group.userNames);
+    const linked = await getUsersByIds(group.userIds);
+    const users = [...buildNamedUsers(group.userNames), ...buildLinkedUsers(linked)];
     const { job } = await launchJob({
       name: `${group.name} — ${state.occurrenceKey}`,
       targetUrl: group.targetUrl,

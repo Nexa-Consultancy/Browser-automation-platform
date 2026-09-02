@@ -49,6 +49,16 @@ export function buildNamedUsers(names: string[]): CsvUserRow[] {
   return names.map((name) => ({ userName: name, data: { name } }));
 }
 
+/**
+ * One row per linked, reusable User (see PlatformUser) — carries userId so
+ * the worker's profilePlanFor routes the session to that user's own
+ * persistent, already-authenticated profile dir instead of any group or
+ * master dir. {{name}} and {{email}} are also exposed for use in steps.
+ */
+export function buildLinkedUsers(users: { id: string; name: string; email: string }[]): CsvUserRow[] {
+  return users.map((u) => ({ userName: u.name, data: { name: u.name, email: u.email, userId: u.id } }));
+}
+
 /** No CSV and no names supplied: synthesize N generically-named rows.
  * {{name}} still resolves (to "User 1", "User 2", ...) so a step script
  * written for named users doesn't just print the literal placeholder. */

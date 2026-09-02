@@ -113,3 +113,26 @@ CREATE TABLE IF NOT EXISTS system_logs (
 
 CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level, created_at DESC);
+
+-- Reusable named users, each with their OWN captured Microsoft/Teams login
+-- (as opposed to the one shared master profile every group can seed from).
+-- The password is encrypted at rest with pgcrypto (enabled above); the key
+-- lives only in the api process's CREDENTIALS_ENC_KEY env var, never here.
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  password_enc BYTEA NOT NULL,
+  -- The login-capture job this user is currently signing into, if any —
+  -- mirrors groups.active_job_id, so Add-user/Re-sign-in can't be fired
+  -- twice concurrently for the same user.
+  active_job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
+
+-- A group's additional roster: real, reusable users linked in alongside the
+-- existing free-text user_names. Additive — legacy groups with only
+-- user_names keep working unchanged; user_ids is simply empty for them.
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS user_ids JSONB NOT NULL DEFAULT '[]';

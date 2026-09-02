@@ -78,6 +78,25 @@ export type InputAction =
   | { kind: "scroll"; deltaY: number };
 
 /**
+ * A reusable, named identity with its own real, persistent Microsoft/Teams
+ * login — as opposed to a Group's free-text userNames, which are just
+ * display-name strings with no login of their own. Any number of groups can
+ * link the same PlatformUser in; their session always resolves to the same
+ * profile directory (see the worker's profilePlanFor), so they always join
+ * already signed in as themselves.
+ */
+export interface PlatformUser {
+  id: string;
+  name: string;
+  email: string;
+  /** Whether a Chromium profile has been captured for this user yet. */
+  signedIn: boolean;
+  /** The login-capture job currently running for this user, if any. */
+  activeJobId: string | null;
+  createdAt: string;
+}
+
+/**
  * A scheduled group: a saved link + task + roster of users that the server
  * launches on its own, every day, between a start and an end wall-clock
  * time in its own timezone. No human needs to be at the dashboard — the
@@ -90,6 +109,10 @@ export interface Group {
   targetUrl: string;
   steps: string[]; // same plain-English step language as a manual job
   userNames: string[]; // one entry per user; length IS the user count
+  /** Reusable Users linked into this group's roster (see PlatformUser) —
+   * each already has their own real, persistent Teams login, additive to
+   * the free-text userNames roster above. */
+  userIds: string[];
   /** The time the thing you're automating actually happens, as typed. */
   startTime: string; // "HH:MM", 24-hour, local to `timezone`
   /** Start this many minutes BEFORE startTime, so the browsers are up and
@@ -132,6 +155,10 @@ export interface GroupSchedule {
 
 export interface GroupWithSchedule extends Group {
   schedule: GroupSchedule;
+  /** Display info for this group's linked PlatformUsers (resolved from
+   * userIds), so the dashboard can show names/status without a second
+   * round trip. */
+  linkedUsers: { id: string; name: string; signedIn: boolean }[];
 }
 
 /** One past run, with its outcome rolled up — the row shape behind the

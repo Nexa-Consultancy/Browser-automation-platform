@@ -3,6 +3,7 @@ import { JobForm } from "./components/JobForm";
 import { JobList } from "./components/JobList";
 import { JobView } from "./components/JobView";
 import { GroupList } from "./components/GroupList";
+import { UsersPanel } from "./components/UsersPanel";
 import { HistoryView } from "./components/HistoryView";
 import { SettingsView } from "./components/SettingsView";
 import { EgressBadge } from "./components/EgressBadge";
@@ -108,7 +109,10 @@ export default function App() {
         </div>
       ) : (
         <div className="container">
-          <GroupList onOpenJob={openJob} />
+          <div className="groups-page-grid">
+            <GroupList onOpenJob={openJob} />
+            <UsersPanel onOpenJob={openJob} />
+          </div>
         </div>
       )}
     </div>

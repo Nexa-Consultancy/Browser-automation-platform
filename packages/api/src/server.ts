@@ -8,11 +8,23 @@ import { historyRoutes } from "./routes/history.js";
 import { systemRoutes } from "./routes/system.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { sessionRoutes } from "./routes/sessions.js";
+import { userRoutes } from "./routes/users.js";
 import { registerWs } from "./ws.js";
 import { startGroupScheduler } from "./scheduler.js";
 import { startAlertListener } from "./alertListener.js";
 
 async function main() {
+  // Required to store/read a PlatformUser's Microsoft password
+  // (pgp_sym_encrypt/pgp_sym_decrypt) — refuse to start rather than let
+  // user creation fail confusingly later, or silently fall back to a
+  // guessable default the way POSTGRES_PASSWORD does for local dev.
+  if (!process.env.CREDENTIALS_ENC_KEY) {
+    console.error(
+      "CREDENTIALS_ENC_KEY is not set — required to store/read PlatformUser passwords. Generate one with `openssl rand -hex 32` and set it in the environment.",
+    );
+    process.exit(1);
+  }
+
   await migrate();
 
   const app = Fastify({ logger: true });
@@ -28,6 +40,7 @@ async function main() {
   await app.register(historyRoutes);
   await app.register(systemRoutes);
   await app.register(sessionRoutes);
+  await app.register(userRoutes);
   await app.register(registerWs);
 
   const port = Number(process.env.API_PORT ?? 4000);

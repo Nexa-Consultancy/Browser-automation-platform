@@ -377,6 +377,12 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
 
 /* ---------- scheduled groups ---------- */
 
+.groups-page-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+
+@media (max-width: 900px) {
+  .groups-page-grid { grid-template-columns: 1fr; }
+}
+
 .group-list { display: grid; gap: 12px; }
 
 .group-card {

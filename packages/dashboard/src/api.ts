@@ -1,4 +1,4 @@
-import type { DailyReport, GroupWithSchedule, Job, RunHistoryRow, SessionRow } from "./types";
+import type { DailyReport, GroupWithSchedule, Job, PlatformUser, RunHistoryRow, SessionRow } from "./types";
 
 const API_BASE = ""; // same-origin in prod (nginx proxies /api); Vite dev server proxies /api too
 
@@ -75,6 +75,7 @@ export interface CreateGroupInput {
   targetUrl: string;
   steps: string;
   userNames: string[];
+  userIds: string[]; // linked PlatformUsers, additive to userNames
   startTime: string; // "HH:MM" — when the thing you're automating happens
   endTime: string; // "HH:MM"
   leadMinutes: number; // start this many minutes before startTime
@@ -229,4 +230,53 @@ export async function importTeamsLogin(file: File): Promise<{ ok: boolean; messa
   const form = new FormData();
   form.set("file", file);
   return json(await fetch(`${API_BASE}/api/teams-login/import`, { method: "POST", body: form }));
+}
+
+// ---------- reusable users, each with their own real Teams login ----------
+
+export async function listUsers(): Promise<{ users: PlatformUser[] }> {
+  return json(await fetch(`${API_BASE}/api/users`));
+}
+
+/** Creates the user and launches their sign-in run; returns the job to open
+ * and drive (auto-fills email/password, then waits for 2FA by hand). */
+export async function createUser(input: { name: string; email: string; password: string }): Promise<{
+  user: PlatformUser;
+  jobId: string;
+}> {
+  return json(
+    await fetch(`${API_BASE}/api/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/** Update name/email, and optionally rotate the password (re-runs sign-in
+ * when a new password is given — jobId is null when it wasn't). */
+export async function updateUser(
+  id: string,
+  input: { name: string; email: string; password?: string },
+): Promise<{ user: PlatformUser; jobId: string | null }> {
+  return json(
+    await fetch(`${API_BASE}/api/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/** Re-run sign-in with the already-stored password (session expired). */
+export async function reloginUser(id: string): Promise<{ jobId: string }> {
+  return json(await fetch(`${API_BASE}/api/users/${id}/relogin`, { method: "POST" }));
+}
+
+export async function clearUserProfile(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/users/${id}/clear-profile`, { method: "POST" }));
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/users/${id}`, { method: "DELETE" }));
 }

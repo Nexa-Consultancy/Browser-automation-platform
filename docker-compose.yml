@@ -43,6 +43,10 @@ services:
       REDIS_URL: redis://redis:6379
       API_PORT: 4000
       TZ: ${TZ}
+      # Encrypts each reusable PlatformUser's stored Microsoft/Teams password
+      # at rest — only the api process ever decrypts it (see
+      # packages/db/src/users.ts); the worker never sees this key.
+      CREDENTIALS_ENC_KEY: ${CREDENTIALS_ENC_KEY}
     ports:
       - "4000:4000"
     # Read-write so the "Clear saved logins" action can delete a group's
