@@ -49,6 +49,7 @@ services:
       CREDENTIALS_ENC_KEY: ${CREDENTIALS_ENC_KEY}
     ports:
       - "4000:4000"
+    restart: unless-stopped
     # Read-write so the "Clear saved logins" action can delete a group's
     # profile directory; the worker is what writes them.
     volumes:
