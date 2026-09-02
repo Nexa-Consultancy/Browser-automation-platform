@@ -28,7 +28,11 @@ const SKIP = new Set(["SingletonLock", "SingletonCookie", "SingletonSocket", "Ru
 export function seedProfileFromMaster(targetDir: string): void {
   const src = masterDir();
   if (!masterLoginExists()) throw new Error("no master login yet — sign in under Settings first");
-  rmSync(targetDir, { recursive: true, force: true });
+  // maxRetries/retryDelay: a worker's Chromium can still be flushing a write
+  // into targetDir at this instant, which drops a file back into a directory
+  // node's recursive rm just emptied — an ENOTEMPTY on the parent rmdir step.
+  // Retrying rides out that race instead of failing the whole seed.
+  rmSync(targetDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   cpSync(src, targetDir, {
     recursive: true,
     filter: (from) => !SKIP.has(path.basename(from)),
@@ -47,11 +51,11 @@ export function seedGroupFromMaster(groupId: string, userCount: number): number 
 }
 
 export function clearGroupProfiles(groupId: string): void {
-  rmSync(path.join(PROFILES_DIR, groupId), { recursive: true, force: true });
+  rmSync(path.join(PROFILES_DIR, groupId), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 export function clearMaster(): void {
-  rmSync(masterDir(), { recursive: true, force: true });
+  rmSync(masterDir(), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 /** Debug aid: which user dirs currently exist under a group. */
