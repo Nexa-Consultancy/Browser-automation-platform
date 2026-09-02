@@ -1,4 +1,4 @@
-import type { DailyReport, GroupWithSchedule, Job, PlatformUser, RunHistoryRow, SessionRow } from "./types";
+import type { DailyReport, GroupWithSchedule, Job, PlatformUser, RunHistoryRow, SessionRow, StepTemplate } from "./types";
 
 const API_BASE = ""; // same-origin in prod (nginx proxies /api); Vite dev server proxies /api too
 
@@ -279,4 +279,37 @@ export async function clearUserProfile(id: string): Promise<void> {
 
 export async function deleteUser(id: string): Promise<void> {
   await json(await fetch(`${API_BASE}/api/users/${id}`, { method: "DELETE" }));
+}
+
+// ---------- reusable step templates ----------
+
+export async function listTemplates(): Promise<{ templates: StepTemplate[] }> {
+  return json(await fetch(`${API_BASE}/api/templates`));
+}
+
+export async function createTemplate(input: { name: string; steps: string }): Promise<{ template: StepTemplate }> {
+  return json(
+    await fetch(`${API_BASE}/api/templates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateTemplate(
+  id: string,
+  input: { name: string; steps: string },
+): Promise<{ template: StepTemplate }> {
+  return json(
+    await fetch(`${API_BASE}/api/templates/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/templates/${id}`, { method: "DELETE" }));
 }

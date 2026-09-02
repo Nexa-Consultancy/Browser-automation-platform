@@ -58,6 +58,19 @@ export function UserSessionBox({
     }
   }
 
+  // Re-queues the exact step that just failed — for a transient miss (the
+  // page was still loading, a network blip) rather than something that
+  // actually needs a corrected step.
+  async function retry() {
+    if (!session.currentStepText) return;
+    setBusy(true);
+    try {
+      await api.appendStepsToSession(session.id, session.currentStepText);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="card session-box">
       <div className="session-head">
@@ -119,6 +132,15 @@ export function UserSessionBox({
       {session.error && <div className="error-banner">{session.error}</div>}
 
       <div className="session-controls">
+        {session.status === "failed" && (
+          <button
+            disabled={busy}
+            onClick={retry}
+            title="Run the exact step that just failed again — for a transient miss, not something that needs fixing"
+          >
+            ↻ Retry
+          </button>
+        )}
         <button
           className="danger"
           disabled={busy || stopped}

@@ -6,7 +6,14 @@
 export type ParsedStep =
   | { kind: "open"; url: string; raw: string }
   | { kind: "click"; target: string; raw: string }
+  /** Like click, but a miss is not a failure — for a prompt that only
+   * sometimes appears (e.g. "Continue in this browser?", a tile chooser on
+   * a login screen). Probes briefly and moves on if nothing matches. */
+  | { kind: "click_if_visible"; target: string; raw: string }
   | { kind: "fill"; field: string; value: string; raw: string }
+  /** Like fill, but a miss is not a failure — for a guest-name field that
+   * only appears when the session isn't already authenticated. */
+  | { kind: "fill_if_visible"; field: string; value: string; raw: string }
   | { kind: "type"; text: string; raw: string }
   | { kind: "select"; field: string; option: string; raw: string }
   | { kind: "check"; field: string; raw: string }
@@ -49,6 +56,12 @@ const PATTERNS: Array<{ re: RegExp; build: (m: RegExpMatchArray, raw: string) =>
     build: (m, raw) => ({ kind: "wait_element", selector: stripQuotes(m[1]), raw }),
   },
   {
+    // Must come before the plain "fill" pattern below, same reason as
+    // "click if visible" above.
+    re: /^fill if visible\s+(.+?)\s+with\s+(.+)$/i,
+    build: (m, raw) => ({ kind: "fill_if_visible", field: stripQuotes(m[1]), value: stripQuotes(m[2]), raw }),
+  },
+  {
     re: /^fill\s+(.+?)\s+with\s+(.+)$/i,
     build: (m, raw) => ({ kind: "fill", field: stripQuotes(m[1]), value: stripQuotes(m[2]), raw }),
   },
@@ -75,6 +88,12 @@ const PATTERNS: Array<{ re: RegExp; build: (m: RegExpMatchArray, raw: string) =>
   {
     re: /^type\s+(.+)$/i,
     build: (m, raw) => ({ kind: "type", text: stripQuotes(m[1]), raw }),
+  },
+  {
+    // Must come before the plain "click" pattern below, or "if visible ..."
+    // would just be swallowed as part of a literal click target.
+    re: /^click if visible\s+(.+)$/i,
+    build: (m, raw) => ({ kind: "click_if_visible", target: stripQuotes(m[1]), raw }),
   },
   {
     re: /^click\s+(.+)$/i,

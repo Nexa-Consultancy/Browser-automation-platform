@@ -129,7 +129,9 @@ export function JobForm({ onCreated }: { onCreated: (jobId: string) => void }) {
           />
           <div className="hint">
             Use {"{{columnName}}"} or {"{columnName}"} to pull a value from that user's CSV row/name. Supported:
-            click X · fill X with Y · type X · select X in Y · check/uncheck X · press KEY · wait for text "X" ·
+            click X · click if visible X · fill X with Y · fill if visible X with Y (both "if visible" forms skip
+            past instead of failing when the target never appears) · type X ·
+            select X in Y · check/uncheck X · press KEY · wait for text "X" ·
             wait N seconds · wait for video · wait for element "selector" · screenshot · open URL (only needed if
             you want to navigate somewhere other than the Target URL mid-script)
           </div>

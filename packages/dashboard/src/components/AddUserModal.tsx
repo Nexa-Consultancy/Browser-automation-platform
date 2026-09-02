@@ -130,9 +130,10 @@ export function AddUserModal({
 
           <div className="form-section">
             <div className="hint">
-              Saving opens a live browser: email and password are filled in automatically, then it stops at
-              "Stay signed in?" — finish that (and any 2FA prompt) by hand in the view that opens, then close it.
-              This user's login is then saved for good and reusable in any group.
+              Saving opens a live browser: email and password are filled in automatically, including "Stay signed
+              in? → Yes" when Microsoft asks. Finish any 2FA prompt by hand in the view that opens. Once you see
+              Teams itself (calendar/chat), the login is already saved to disk — click <strong>Stop</strong> on
+              that run right away, you don't need to leave it open.
             </div>
           </div>
 

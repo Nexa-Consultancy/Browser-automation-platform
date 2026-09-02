@@ -32,9 +32,34 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
       return;
     }
 
+    case "click_if_visible": {
+      // A short, fixed probe rather than ctx.timeoutMs: this step's whole
+      // point is "don't block the run waiting for something that may never
+      // show up," so it must fail fast, not eat the full action timeout.
+      const PROBE_MS = 3000;
+      try {
+        const loc = await resolveClickable(page, t(step.target, ctx.row), PROBE_MS);
+        await loc.click({ timeout: PROBE_MS });
+      } catch {
+        // Not present — that's fine, this step is optional.
+      }
+      return;
+    }
+
     case "fill": {
       const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
       await loc.fill(t(step.value, ctx.row), { timeout: ctx.timeoutMs });
+      return;
+    }
+
+    case "fill_if_visible": {
+      const PROBE_MS = 3000;
+      try {
+        const loc = await resolveField(page, t(step.field, ctx.row), PROBE_MS);
+        await loc.fill(t(step.value, ctx.row), { timeout: PROBE_MS });
+      } catch {
+        // Not present — that's fine, this step is optional.
+      }
       return;
     }
 

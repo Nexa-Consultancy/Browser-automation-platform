@@ -17,18 +17,28 @@ import { launchJob, stopJob } from "../services/launch.js";
 import { clearUserProfile, userLoginExists } from "../services/users.js";
 
 /**
- * Auto-fills the two fields Microsoft's login always asks for, then stops —
- * "Stay signed in?" and any 2FA prompt are finished by hand through the
- * live view, exactly the workflow already used for the shared master login.
- * If Microsoft ever changes these labels, only this constant needs editing.
+ * Auto-fills email + password, then stops for any 2FA prompt to be
+ * finished by hand through the live view, exactly the workflow already
+ * used for the shared master login. Two steps are "click if visible"
+ * rather than plain clicks because Microsoft doesn't always show them:
+ * some accounts land straight on a password field after "Next" (others get
+ * a "Sign in another way" tile chooser first, where "Password" itself is
+ * just a tile label — filling straight into that fails, hence the click),
+ * and "Stay signed in?" only appears if the browser hasn't already
+ * answered it before. If Microsoft changes any of these labels, only this
+ * constant needs editing.
  */
 const LOGIN_CAPTURE_STEPS = [
   'open https://teams.microsoft.com/',
   'fill "Email, phone, or Skype" with {{email}}',
   'click "Next"',
   'wait for 2 seconds',
+  'click if visible "Use your password"',
+  'wait for 1 seconds',
   'fill "Password" with {{password}}',
   'click "Sign in"',
+  'wait for 2 seconds',
+  'click if visible "Yes"',
 ];
 
 /** A job in one of these states is no longer holding any browser open —

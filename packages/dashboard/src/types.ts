@@ -81,6 +81,15 @@ export interface PlatformUser {
   createdAt: string;
 }
 
+/** A reusable step script, picked from a list when creating/editing a group
+ * instead of retyping the same Task every time. */
+export interface StepTemplate {
+  id: string;
+  name: string;
+  steps: string[];
+  createdAt: string;
+}
+
 /** A saved link + task + user roster the server runs by itself on a daily
  * wall-clock window. Mirrors packages/shared/src/types.ts. */
 export interface Group {

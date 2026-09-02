@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GroupWithSchedule, PlatformUser } from "../types";
+import type { GroupWithSchedule, PlatformUser, StepTemplate } from "../types";
 import * as api from "../api";
 
 const TASK_PLACEHOLDER = `fill Email with {{name}}@example.com
@@ -24,6 +24,13 @@ const DAYS: { value: number; label: string }[] = [
   { value: 6, label: "Sat" },
   { value: 0, label: "Sun" },
 ];
+
+/** The stored steps always begin with the auto-injected "open {{url}}";
+ * don't show that back to the user as if they had typed it — used both for
+ * an existing group's saved steps and for a template's steps. */
+function stripAutoOpen(steps: string[]): string {
+  return steps.filter((s, i) => !(i === 0 && /^(open|go to|navigate to)\s+\{\{?url\}?\}$/i.test(s))).join("\n");
+}
 
 /** Grows/shrinks the name roster in place so names already typed survive a
  * change to the user count (both directions). */
@@ -66,18 +73,18 @@ export function GroupModal({
   onSaved: () => void;
 }) {
   const editing = !!group;
-  // The stored steps always begin with the auto-injected "open {{url}}";
-  // don't show that back to the user as if they had typed it.
-  const initialSteps = group
-    ? group.steps.filter((s, i) => !(i === 0 && /^(open|go to|navigate to)\s+\{\{?url\}?\}$/i.test(s))).join("\n")
-    : "";
+  const initialSteps = group ? stripAutoOpen(group.steps) : "";
 
   const [name, setName] = useState(group?.name ?? "");
   const [targetUrl, setTargetUrl] = useState(group?.targetUrl ?? "");
   const [steps, setSteps] = useState(initialSteps);
-  const [userCount, setUserCount] = useState(group?.userNames.length ?? 2);
-  const [names, setNames] = useState<string[]>(group?.userNames ?? ["", ""]);
+  // A brand new group starts with an empty free-text roster (0), not a
+  // couple of blank required names — picking existing linked users below
+  // should be enough on its own to save, with no free-text entry forced.
+  const [userCount, setUserCount] = useState(group?.userNames.length ?? 0);
+  const [names, setNames] = useState<string[]>(group?.userNames ?? []);
   const [allUsers, setAllUsers] = useState<PlatformUser[]>([]);
+  const [templates, setTemplates] = useState<StepTemplate[]>([]);
   const [linkedIds, setLinkedIds] = useState<string[]>(group?.userIds ?? []);
   const [startTime, setStartTime] = useState(group?.startTime ?? "17:00");
   const [endTime, setEndTime] = useState(group?.endTime ?? "21:00");
@@ -98,7 +105,16 @@ export function GroupModal({
 
   useEffect(() => {
     void api.listUsers().then((r) => setAllUsers(r.users)).catch(() => {});
+    void api.listTemplates().then((r) => setTemplates(r.templates)).catch(() => {});
   }, []);
+
+  function applyTemplate(id: string) {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    setSteps(stripAutoOpen(t.steps));
+    setShowPrompt(true);
+    setDirty(true);
+  }
 
   const requestClose = useCallback(() => {
     if (dirty && !confirm("Discard this group? Anything you have typed will be lost.")) return;
@@ -319,6 +335,20 @@ export function GroupModal({
                 {showPrompt ? "Hide prompt" : "View prompt"}
               </button>
             )}
+            {templates.length > 0 && (
+              <div className="form-row" style={{ maxWidth: 280, marginBottom: 10 }}>
+                <label>Use a template</label>
+                <select value="" onChange={(e) => e.target.value && applyTemplate(e.target.value)}>
+                  <option value="">Choose a saved template…</option>
+                  {templates.map((t) => (
+                    <option value={t.id} key={t.id}>
+                      {t.name} ({t.steps.length} steps)
+                    </option>
+                  ))}
+                </select>
+                <div className="hint">Replaces the task below. Manage templates under Settings.</div>
+              </div>
+            )}
             <div className="form-row" hidden={!showPrompt}>
               <label>What this group should do (one step per line)</label>
               <textarea
@@ -329,7 +359,9 @@ export function GroupModal({
                 placeholder={TASK_PLACEHOLDER}
               />
               <div className="hint">
-                The link above is opened automatically as step 1. Supported: click X · fill X with Y · type X ·
+                The link above is opened automatically as step 1. Supported: click X · click if visible X · fill X
+                with Y · fill if visible X with Y (both "if visible" forms skip past instead of failing when the
+                target never appears — for a prompt that only shows up sometimes) · type X ·
                 select X in Y · check/uncheck X · press KEY · wait for text "X" · wait N seconds · wait for video ·
                 wait for element "selector" · screenshot
               </div>

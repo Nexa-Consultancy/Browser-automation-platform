@@ -9,6 +9,7 @@ import { systemRoutes } from "./routes/system.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { userRoutes } from "./routes/users.js";
+import { templateRoutes } from "./routes/templates.js";
 import { registerWs } from "./ws.js";
 import { startGroupScheduler } from "./scheduler.js";
 import { startAlertListener } from "./alertListener.js";
@@ -41,6 +42,7 @@ async function main() {
   await app.register(systemRoutes);
   await app.register(sessionRoutes);
   await app.register(userRoutes);
+  await app.register(templateRoutes);
   await app.register(registerWs);
 
   const port = Number(process.env.API_PORT ?? 4000);

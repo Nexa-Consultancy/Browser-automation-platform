@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "../api";
+import { TemplatesSettings } from "./TemplatesSettings";
 
 type Settings = Record<string, string>;
 
@@ -434,6 +435,8 @@ export function SettingsView() {
             </label>
           </div>
         </div>
+
+        <TemplatesSettings />
       </div>
     </div>
   );

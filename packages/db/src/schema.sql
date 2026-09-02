@@ -136,3 +136,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
 -- existing free-text user_names. Additive — legacy groups with only
 -- user_names keep working unchanged; user_ids is simply empty for them.
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS user_ids JSONB NOT NULL DEFAULT '[]';
+
+-- Reusable step scripts, so a group's Task doesn't have to be retyped every
+-- time — pick one from the list when creating/editing a group.
+CREATE TABLE IF NOT EXISTS step_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  steps JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A starting "Join meeting" template: works whether the session is a typed
+-- guest name (userNames) or an already-authenticated linked user (userIds)
+-- — the two "if visible" steps are exactly the no-op-when-absent behavior
+-- that makes one script cover both without failing either path. Only
+-- inserted once; freely editable afterward from Settings.
+INSERT INTO step_templates (id, name, steps)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'Join meeting',
+  '["open {{url}}", "click if visible \"Continue on this browser\"", "click if visible \"Continue without audio or video\"", "fill if visible \"Type your name\" with {{name}}", "click \"Join\""]'::jsonb
+)
+ON CONFLICT (id) DO NOTHING;
