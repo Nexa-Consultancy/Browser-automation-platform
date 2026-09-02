@@ -4,27 +4,27 @@ import { JobList } from "./components/JobList";
 import { JobView } from "./components/JobView";
 import { GroupList } from "./components/GroupList";
 import { UsersPanel } from "./components/UsersPanel";
-import { HistoryView } from "./components/HistoryView";
+import { DashboardView } from "./components/DashboardView";
 import { SettingsView } from "./components/SettingsView";
 import { EgressBadge } from "./components/EgressBadge";
 
 type Route =
   | { view: "runs" }
   | { view: "groups" }
-  | { view: "history" }
+  | { view: "dashboard" }
   | { view: "settings" }
   | { view: "job"; jobId: string };
 
-// Groups is the landing view: scheduled automations are the main way this
-// gets used, and a one-off custom run is the exception rather than the door
-// you come in through.
+// Dashboard is the landing view: it's the one place that shows what's live
+// right now, what's coming up on the schedule, and the history underneath
+// — the first thing anyone should see, not a group's config form.
 function routeFromHash(): Route {
   const job = location.hash.match(/^#\/job\/(.+)$/);
   if (job) return { view: "job", jobId: job[1] };
   if (location.hash === "#/runs") return { view: "runs" };
-  if (location.hash === "#/history") return { view: "history" };
+  if (location.hash === "#/groups") return { view: "groups" };
   if (location.hash === "#/settings") return { view: "settings" };
-  return { view: "groups" };
+  return { view: "dashboard" };
 }
 
 export default function App() {
@@ -54,8 +54,14 @@ export default function App() {
         </div>
         <nav className="app-tabs">
           <button
-            className={route.view === "groups" ? "active" : ""}
+            className={route.view === "dashboard" ? "active" : ""}
             onClick={() => go("")}
+          >
+            Dashboard
+          </button>
+          <button
+            className={route.view === "groups" ? "active" : ""}
+            onClick={() => go("#/groups")}
           >
             Groups
           </button>
@@ -64,12 +70,6 @@ export default function App() {
             onClick={() => go("#/runs")}
           >
             Custom run
-          </button>
-          <button
-            className={route.view === "history" ? "active" : ""}
-            onClick={() => go("#/history")}
-          >
-            View more
           </button>
           <button
             className={route.view === "settings" ? "active" : ""}
@@ -87,9 +87,9 @@ export default function App() {
         <div className="container">
           <SettingsView />
         </div>
-      ) : route.view === "history" ? (
+      ) : route.view === "dashboard" ? (
         <div className="container">
-          <HistoryView onOpenJob={openJob} />
+          <DashboardView onOpenJob={openJob} />
         </div>
       ) : route.view === "runs" ? (
         <div className="container">

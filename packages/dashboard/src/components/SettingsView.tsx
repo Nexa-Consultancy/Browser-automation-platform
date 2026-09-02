@@ -258,6 +258,24 @@ export function SettingsView() {
                     </span>
                   </label>
 
+                  <label className="switch-row">
+                    <input
+                      type="checkbox"
+                      checked={on("ALERT_ON_LIFECYCLE")}
+                      onChange={(e) => set("ALERT_ON_LIFECYCLE", String(e.target.checked))}
+                    />
+                    <span className="switch-track" aria-hidden="true">
+                      <span className="switch-knob" />
+                    </span>
+                    <span className="switch-text">
+                      <strong>Also alert when a group starts or stops</strong>
+                      <span className="hint">
+                        Separate from the failure switch above — turn this off if start/stop messages get noisy
+                        without touching failure alerts.
+                      </span>
+                    </span>
+                  </label>
+
                   <div className="form-two-col" style={{ marginTop: 14 }}>
                     <Field label="SMTP host" hint="Gmail: smtp.gmail.com">
                       <input

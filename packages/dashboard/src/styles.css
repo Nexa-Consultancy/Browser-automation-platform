@@ -151,7 +151,12 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
   animation: pulse-soft 2.6s ease-in-out infinite;
 }
 
-.container { max-width: 1240px; margin: 0 auto; padding: 22px; }
+/* ~20% larger text/controls on every page except the live screencast view
+ * (JobView renders outside .container on purpose) — zoom scales font size,
+ * padding and layout together, which a font-size-only bump wouldn't; the
+ * screencast is excluded because its click-passthrough math depends on
+ * exact rendered-pixel geometry (see packages/dashboard/src/viewport.ts). */
+.container { max-width: 1240px; margin: 0 auto; padding: 22px; zoom: 1.2; }
 
 .card {
   background: var(--panel);
@@ -831,9 +836,9 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 
 /* Bigger, more comfortable search — the old field was cramped. */
 .search-field input {
-  height: 44px; font-size: 14px; padding-left: 38px; border-radius: 8px;
+  height: 48px; font-size: 15px; padding-left: 40px; border-radius: 9px;
 }
-.search-field .search-icon { font-size: 19px; left: 13px; }
+.search-field .search-icon { font-size: 21px; left: 14px; }
 .filter-field input[type="date"] { height: 44px; }
 .filter-bar button { height: 44px; }
 

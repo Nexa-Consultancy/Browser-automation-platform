@@ -10,6 +10,9 @@ export interface AlertInput {
   sessionId?: string | null;
   userName?: string | null;
   groupName?: string | null;
+  /** A group starting or stopping, not a failure — gated by
+   * ALERT_ON_LIFECYCLE instead of (or in addition to) level === "ERROR". */
+  lifecycle?: boolean;
 }
 
 function recipients(s: SettingsMap): string[] {
@@ -226,7 +229,10 @@ export async function raiseAlert(a: AlertInput): Promise<void> {
   }
 
   if (settings.ALERTS_ENABLED !== "true") return;
-  if (a.level !== "ERROR") return; // only failures are worth interrupting someone for
+  // Failures always qualify; a lifecycle event (group started/stopped) only
+  // qualifies if that separate toggle is on — everything else is noise.
+  const qualifies = a.level === "ERROR" || (a.lifecycle === true && settings.ALERT_ON_LIFECYCLE === "true");
+  if (!qualifies) return;
 
   const when = new Date(log.createdAt).toLocaleString("en-US", { timeZone: process.env.TZ || "UTC" });
 

@@ -1,4 +1,4 @@
-import { claimGroupOccurrence, getJob, getUsersByIds, listGroups, releaseGroupRun } from "@automation/db";
+import { claimGroupOccurrence, getJob, getSettings, getUsersByIds, listGroups, releaseGroupRun } from "@automation/db";
 import {
   buildLinkedUsers,
   buildNamedUsers,
@@ -10,6 +10,7 @@ import {
   type Group,
   type JobStatus,
 } from "@automation/shared";
+import { raiseAlert } from "./alerts.js";
 import { launchJob, stopJob } from "./services/launch.js";
 
 const TICK_MS = Number(process.env.GROUP_SCHEDULER_TICK_MS ?? 20_000);
@@ -51,6 +52,14 @@ export function startGroupScheduler(log: Logger): () => void {
     if (running) return;
     running = true;
     try {
+      // The global kill switch: POST /api/system/stop-all sets this, and
+      // while it's on the scheduler must not evaluate ANY group — not just
+      // skip launching, but also skip the window-closed/held-off stop
+      // branches below, or it would immediately "helpfully" clean up state
+      // a human paused on purpose.
+      const settings = await getSettings().catch(() => ({}) as Record<string, string>);
+      if (settings.SCHEDULER_PAUSED === "true") return;
+
       for (const group of await listGroups()) {
         try {
           await evaluateGroup(group, log);
@@ -110,6 +119,14 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
       await stopJob(jobId);
       await releaseGroupRun(group.id, state.occurrenceKey, true);
       log.info(`group ${group.name}: schedule held off mid-run — stopped job ${jobId}`);
+      void raiseAlert({
+        level: "INFO",
+        lifecycle: true,
+        source: "scheduler",
+        message: `Stopped — schedule was held off mid-run`,
+        groupName: group.name,
+        jobId,
+      });
     }
     return;
   }
@@ -140,6 +157,14 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
         `${group.leadMinutes ? ` (${group.leadMinutes}m before ${group.startTime})` : ""}` +
         ` — started job ${job.id} for ${users.length} user(s)`,
     );
+    void raiseAlert({
+      level: "INFO",
+      lifecycle: true,
+      source: "scheduler",
+      message: `Started — running until ${group.endTime} ${group.timezone}, ${users.length} user(s)`,
+      groupName: group.name,
+      jobId: job.id,
+    });
     return;
   }
 
@@ -152,6 +177,14 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
     await stopJob(jobId);
     await releaseGroupRun(group.id, null, true);
     log.info(`group ${group.name}: window closed at ${group.endTime} ${group.timezone} — stopped job ${jobId}`);
+    void raiseAlert({
+      level: "INFO",
+      lifecycle: true,
+      source: "scheduler",
+      message: `Stopped — window closed at ${group.endTime} ${group.timezone}`,
+      groupName: group.name,
+      jobId,
+    });
   }
 }
 

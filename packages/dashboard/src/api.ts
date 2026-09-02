@@ -215,6 +215,22 @@ export async function getEgressInfo(): Promise<EgressInfo> {
   return json(await fetch(`${API_BASE}/api/system/egress-info`));
 }
 
+// ---------- global stop-all / resume ----------
+
+export async function getSystemStatus(): Promise<{ paused: boolean }> {
+  return json(await fetch(`${API_BASE}/api/system/status`));
+}
+
+/** Stops every browser session running anywhere and pauses the scheduler
+ * until resumeAll() is called. */
+export async function stopAllNow(): Promise<{ ok: boolean; stoppedGroups: number; stoppedJobs: number }> {
+  return json(await fetch(`${API_BASE}/api/system/stop-all`, { method: "POST" }));
+}
+
+export async function resumeAll(): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/system/resume`, { method: "POST" }));
+}
+
 /** Wipe a group's saved browser profiles (cookies/logins). Next run starts
  * signed out. Refused while the group has a run in progress. */
 export async function clearGroupProfiles(id: string): Promise<void> {

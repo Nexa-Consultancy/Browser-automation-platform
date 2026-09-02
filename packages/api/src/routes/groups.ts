@@ -27,6 +27,7 @@ import {
 import { launchJob, normalizeSteps, stopJob } from "../services/launch.js";
 import { clearGroupProfiles, seedGroupFromMaster, masterLoginExists } from "../services/profiles.js";
 import { userLoginExists } from "../services/users.js";
+import { raiseAlert } from "../alerts.js";
 
 const MAX_USERS_PER_GROUP = 200;
 
@@ -303,7 +304,8 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     if (!group) return reply.code(404).send({ error: "not found" });
     if (!group.activeJobId) return reply.code(409).send({ error: "this group has no run in progress" });
 
-    const stopped = await stopJob(group.activeJobId);
+    const jobId = group.activeJobId;
+    const stopped = await stopJob(jobId);
     // Consume the current occurrence so the scheduler doesn't immediately
     // relaunch what was just stopped — but only for a scheduled run. A
     // manual "Join now" never claimed the occurrence, so stopping it must
@@ -312,6 +314,14 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     const start = effectiveStartMinutes(parseHhMm(group.startTime), group.leadMinutes);
     const state = windowStateAt(start, parseHhMm(group.endTime), now, group.days);
     await releaseGroupRun(group.id, group.activeRunIsManual ? null : state.occurrenceKey, true);
+    void raiseAlert({
+      level: "INFO",
+      lifecycle: true,
+      source: "groups",
+      message: "Stopped by hand",
+      groupName: group.name,
+      jobId,
+    });
     reply.send({ ok: true, stopped });
   });
 }

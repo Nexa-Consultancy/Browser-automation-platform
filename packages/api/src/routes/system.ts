@@ -1,8 +1,17 @@
 import type { FastifyInstance } from "fastify";
-import { getSettings, listLogs, redactSettings, updateSettings, type LogLevel } from "@automation/db";
+import {
+  getSettings,
+  listGroups,
+  listLogs,
+  listJobs,
+  redactSettings,
+  releaseGroupRun,
+  updateSettings,
+  type LogLevel,
+} from "@automation/db";
 import { MASTER_LOGIN_JOB_NAME, buildDefaultUsers, serverTimezone } from "@automation/shared";
-import { sendTestEmail, sendTestDiscord, sendTestTelegram, detectTelegramChats } from "../alerts.js";
-import { launchJob } from "../services/launch.js";
+import { raiseAlert, sendTestEmail, sendTestDiscord, sendTestTelegram, detectTelegramChats } from "../alerts.js";
+import { launchJob, stopJob } from "../services/launch.js";
 import { clearMaster, masterLoginExists, PROFILES_DIR } from "../services/profiles.js";
 import { enqueueBakeMaster } from "@automation/queue";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -47,6 +56,64 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   // Lists chats the Telegram bot can currently see, so setting up a group
   // doesn't require reading raw getUpdates JSON by hand.
   app.get("/api/settings/telegram-chats", async () => detectTelegramChats());
+
+  app.get("/api/system/status", async () => {
+    const s = await getSettings();
+    return { paused: s.SCHEDULER_PAUSED === "true" };
+  });
+
+  /**
+   * The emergency brake: stops every browser session running anywhere right
+   * now (group-driven or a standalone custom run) and sets the pause flag
+   * the scheduler checks on every tick, so nothing new starts either. A
+   * still-open group window just waits — see /resume below.
+   */
+  app.post("/api/system/stop-all", async () => {
+    await updateSettings({ SCHEDULER_PAUSED: "true" });
+
+    let stoppedGroups = 0;
+    for (const group of await listGroups()) {
+      if (!group.activeJobId) continue;
+      await stopJob(group.activeJobId);
+      await releaseGroupRun(group.id, null, true);
+      stoppedGroups += 1;
+    }
+
+    let stoppedJobs = 0;
+    for (const job of await listJobs()) {
+      if (job.groupId) continue; // already covered above
+      if (job.status === "pending" || job.status === "running") {
+        await stopJob(job.id);
+        stoppedJobs += 1;
+      }
+    }
+
+    void raiseAlert({
+      level: "INFO",
+      lifecycle: true,
+      source: "system",
+      message: `Stop all — ${stoppedGroups} group(s) and ${stoppedJobs} standalone run(s) stopped, scheduler paused`,
+    });
+
+    return { ok: true, stoppedGroups, stoppedJobs };
+  });
+
+  /**
+   * Un-pauses the scheduler for future occurrences. Deliberately does NOT
+   * relaunch anything stop-all just stopped — a still-open window simply
+   * waits for its next occurrence, same as any other "outside the window"
+   * state the scheduler already handles.
+   */
+  app.post("/api/system/resume", async () => {
+    await updateSettings({ SCHEDULER_PAUSED: "false" });
+    void raiseAlert({
+      level: "INFO",
+      lifecycle: true,
+      source: "system",
+      message: "Resumed — the schedule is running again",
+    });
+    return { ok: true };
+  });
 
   // Whether the one shared Teams account has been signed in yet.
   app.get("/api/teams-login/status", async () => ({ signedIn: masterLoginExists() }));

@@ -12,8 +12,16 @@ export const SETTING_DEFAULTS: SettingsMap = {
   PROXY_PORT: "",
   PROXY_USER: "",
   PROXY_PASS: "",
+  // --- system control ---
+  // Global kill switch: while true, the group scheduler skips every tick
+  // (no group is evaluated, nothing new launches or stops on its own) —
+  // set by POST /api/system/stop-all, cleared by POST /api/system/resume.
+  SCHEDULER_PAUSED: "false",
   // --- email alerting ---
   ALERTS_ENABLED: "false",
+  // Separate from ALERTS_ENABLED (which gates failure alerts) so a group
+  // starting/stopping can be silenced without touching failure alerting.
+  ALERT_ON_LIFECYCLE: "true",
   SMTP_HOST: "",
   SMTP_PORT: "587",
   SMTP_SECURE: "false", // true for port 465, false for 587 STARTTLS

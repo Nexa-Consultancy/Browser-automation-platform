@@ -2,19 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { GroupWithSchedule } from "../types";
 import * as api from "../api";
 import { GroupModal } from "./GroupModal";
-
-/** "3d 4h" / "3h 12m" / "45m" — the countdown to the next boundary. Once a
- * group only runs on some weekdays the next start can be days out, so this
- * has to carry a day component. -1 means "no day is selected". */
-function relative(minutes: number): string {
-  if (minutes < 0) return "never";
-  if (minutes === 0) return "now";
-  const d = Math.floor(minutes / 1440);
-  const h = Math.floor((minutes % 1440) / 60);
-  const m = minutes % 60;
-  if (d > 0) return `${d}d ${h}h`;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
+import { relative, to12Hour } from "../format";
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -29,15 +17,9 @@ function describeDays(days: number[]): string {
   return ordered.map((d) => DAY_LABELS[d]).join(", ") || "No days selected";
 }
 
-function to12Hour(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
-  const suffix = h >= 12 ? "PM" : "AM";
-  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${suffix}`;
-}
-
 export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void }) {
   const [groups, setGroups] = useState<GroupWithSchedule[]>([]);
+  const [paused, setPaused] = useState(false);
   const [serverTimezone, setServerTimezone] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<GroupWithSchedule | null>(null);
@@ -65,9 +47,10 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api.listGroups();
-      setGroups(res.groups);
-      setServerTimezone(res.serverTimezone);
+      const [groupsRes, statusRes] = await Promise.all([api.listGroups(), api.getSystemStatus()]);
+      setGroups(groupsRes.groups);
+      setServerTimezone(groupsRes.serverTimezone);
+      setPaused(statusRes.paused);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -225,17 +208,19 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
               </div>
 
               <div className="group-countdown">
-                {live && g.activeRunIsManual
-                  ? "Running now, started by hand — it keeps going until you stop it."
-                  : live
-                    ? `Running now · stops in ${relative(g.schedule.minutesUntilEnd)}`
-                    : !g.enabled
-                      ? "Held off by hand — runs only when you press Join now."
-                      : pending
-                        ? "Inside its window — starting within a few seconds"
-                        : spent
-                          ? `Already ran in this window · next start in ${relative(g.schedule.minutesUntilStart)}`
-                          : `Next start in ${relative(g.schedule.minutesUntilStart)}`}
+                {paused
+                  ? "Paused — the schedule is stopped until someone hits Resume."
+                  : live && g.activeRunIsManual
+                    ? "Running now, started by hand — it keeps going until you stop it."
+                    : live
+                      ? `Running now · stops in ${relative(g.schedule.minutesUntilEnd)}`
+                      : !g.enabled
+                        ? "Held off by hand — runs only when you press Join now."
+                        : pending
+                          ? "Inside its window — starting within a few seconds"
+                          : spent
+                            ? `Already ran in this window · next start in ${relative(g.schedule.minutesUntilStart)}`
+                            : `Next start in ${relative(g.schedule.minutesUntilStart)}`}
               </div>
 
               <div className="group-actions">

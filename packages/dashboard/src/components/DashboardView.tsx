@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DailyReport, RunHistoryRow } from "../types";
+import type { DailyReport, GroupWithSchedule, Job, RunHistoryRow } from "../types";
 import * as api from "../api";
 import { StatusBadge } from "./StatusBadge";
+import { relative, to12Hour } from "../format";
 
 function fmtTime(iso: string | null, timezone: string): string {
   if (!iso) return "—";
@@ -22,11 +23,17 @@ function fmtDuration(from: string | null, to: string | null): string {
 }
 
 /**
- * History and daily reports — every run the platform has done, scheduled or
- * manual, with what became of each user in it. Also the place to answer
- * "did last night's group actually run?" without hunting through live views.
+ * The landing page: what's live right now, what's coming up on the
+ * schedule, the emergency stop-all/resume, and — unchanged from the old
+ * "View more" — every past run with the daily totals. A row here already
+ * opens the run's session view (onOpenJob -> JobView), so drilling into a
+ * run's individual user sessions needs no new UI, just this entry point.
  */
-export function HistoryView({ onOpenJob }: { onOpenJob: (jobId: string) => void }) {
+export function DashboardView({ onOpenJob }: { onOpenJob: (jobId: string) => void }) {
+  const [groups, setGroups] = useState<GroupWithSchedule[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [paused, setPaused] = useState(false);
+  const [stopAllBusy, setStopAllBusy] = useState(false);
   const [runs, setRuns] = useState<(RunHistoryRow & { localDate: string })[]>([]);
   const [daily, setDaily] = useState<DailyReport[]>([]);
   const [timezone, setTimezone] = useState("");
@@ -34,13 +41,22 @@ export function HistoryView({ onOpenJob }: { onOpenJob: (jobId: string) => void 
   const [onDate, setOnDate] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api.getHistory();
-      setRuns(res.runs);
-      setDaily(res.daily);
-      setTimezone(res.serverTimezone);
+      const [history, groupsRes, jobsRes, statusRes] = await Promise.all([
+        api.getHistory(),
+        api.listGroups(),
+        api.listJobs(),
+        api.getSystemStatus(),
+      ]);
+      setRuns(history.runs);
+      setDaily(history.daily);
+      setTimezone(history.serverTimezone);
+      setGroups(groupsRes.groups);
+      setJobs(jobsRes.jobs);
+      setPaused(statusRes.paused);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -51,9 +67,72 @@ export function HistoryView({ onOpenJob }: { onOpenJob: (jobId: string) => void 
 
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => void refresh(), 30_000);
+    const t = setInterval(() => void refresh(), 15_000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  async function doStopAll() {
+    if (!confirm("Stop every running task and pause the schedule? Nothing new will start until you hit Resume.")) {
+      return;
+    }
+    setStopAllBusy(true);
+    try {
+      await api.stopAllNow();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStopAllBusy(false);
+    }
+  }
+
+  async function doResume() {
+    setStopAllBusy(true);
+    try {
+      await api.resumeAll();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStopAllBusy(false);
+    }
+  }
+
+  async function stopGroupRow(groupId: string) {
+    setRowBusy(groupId);
+    try {
+      await api.stopGroupNow(groupId);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRowBusy(null);
+    }
+  }
+
+  async function stopJobRow(jobId: string) {
+    setRowBusy(jobId);
+    try {
+      await api.stopAll(jobId);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRowBusy(null);
+    }
+  }
+
+  const liveGroups = groups.filter((g) => g.activeJobId);
+  const groupJobIds = new Set(liveGroups.map((g) => g.activeJobId));
+  const liveStandaloneJobs = jobs.filter(
+    (j) => !j.groupId && (j.status === "pending" || j.status === "running") && !groupJobIds.has(j.id),
+  );
+  const liveCount = liveGroups.length + liveStandaloneJobs.length;
+
+  const upNext = groups
+    .filter((g) => g.enabled && !g.activeJobId && g.schedule.minutesUntilStart >= 0)
+    .sort((a, b) => a.schedule.minutesUntilStart - b.schedule.minutesUntilStart)
+    .slice(0, 6);
 
   const filtered = runs.filter((r) => {
     const q = query.trim().toLowerCase();
@@ -72,12 +151,102 @@ export function HistoryView({ onOpenJob }: { onOpenJob: (jobId: string) => void 
     <div>
       <div className="job-toolbar">
         <div className="job-toolbar-title">
-          <h2>History &amp; reports</h2>
+          <h2>Dashboard</h2>
           {timezone && <span className="hint">all times {timezone}</span>}
+        </div>
+        <div className="job-toolbar-actions">
+          {paused ? (
+            <button className="primary" onClick={doResume} disabled={stopAllBusy}>
+              {stopAllBusy ? "Resuming…" : "▶ Resume"}
+            </button>
+          ) : (
+            <button className="danger" onClick={doStopAll} disabled={stopAllBusy}>
+              {stopAllBusy ? "Stopping…" : "■ Stop all"}
+            </button>
+          )}
         </div>
       </div>
 
       {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
+
+      {paused && (
+        <div className="error-banner" style={{ marginBottom: 14 }}>
+          Paused — the schedule is stopped and nothing new will start. Click <strong>Resume</strong> above when
+          you're ready.
+        </div>
+      )}
+
+      <div className="eyebrow">Live now {liveCount > 0 && `(${liveCount})`}</div>
+      {liveCount === 0 && <div className="empty-state" style={{ padding: "20px 0" }}>Nothing running right now.</div>}
+      {liveCount > 0 && (
+        <div className="group-list" style={{ marginBottom: 26 }}>
+          {liveGroups.map((g) => (
+            <div className="card session-box" key={g.id}>
+              <div className="session-head">
+                <span className="name">{g.name}</span>
+                <StatusBadge status="running" />
+              </div>
+              <div className="group-meta">
+                <span>
+                  {g.activeRunIsManual ? "Started by hand" : `Stops ${to12Hour(g.endTime)} ${g.timezone}`}
+                  {!g.activeRunIsManual && ` · in ${relative(g.schedule.minutesUntilEnd)}`}
+                </span>
+              </div>
+              <div className="session-controls">
+                <button onClick={() => onOpenJob(g.activeJobId!)}>Watch live</button>
+                <button className="danger" disabled={rowBusy === g.id} onClick={() => void stopGroupRow(g.id)}>
+                  Stop
+                </button>
+              </div>
+            </div>
+          ))}
+          {liveStandaloneJobs.map((j) => (
+            <div className="card session-box" key={j.id}>
+              <div className="session-head">
+                <span className="name">{j.name}</span>
+                <StatusBadge status={j.status} />
+              </div>
+              <div className="group-meta">
+                <span className="dim">custom run</span>
+              </div>
+              <div className="session-controls">
+                <button onClick={() => onOpenJob(j.id)}>Watch live</button>
+                <button className="danger" disabled={rowBusy === j.id} onClick={() => void stopJobRow(j.id)}>
+                  Stop
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {upNext.length > 0 && (
+        <>
+          <div className="eyebrow">Up next</div>
+          <div className="table-scroll" style={{ marginBottom: 26 }}>
+            <table className="history-table">
+              <thead>
+                <tr>
+                  <th>Group</th>
+                  <th>Starts</th>
+                  <th>In</th>
+                </tr>
+              </thead>
+              <tbody>
+                {upNext.map((g) => (
+                  <tr key={g.id} className="no-hover">
+                    <td>{g.name}</td>
+                    <td>
+                      {to12Hour(g.schedule.effectiveStart)} <span className="dim">{g.timezone}</span>
+                    </td>
+                    <td>{paused ? "Paused" : relative(g.schedule.minutesUntilStart)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {today && (
         <div className="report-cards">
