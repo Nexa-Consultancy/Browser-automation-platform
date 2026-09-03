@@ -63,6 +63,48 @@ DONE (beyond initial build):
   first) — the window math is where the quiet failures live (DST, midnight
   crossing, weekday filtering, double-fire).
 
+- Bug sweep across the three areas the user flagged (meeting join/worker
+  steps, live view, groups/scheduler):
+  * locators.ts "prefer a visible match" never ran — `loc.locator(":visible")`
+    searches DESCENDANTS, so an <input> matched nothing and a <button>
+    matched its inner span. Worse, the wait was `union.first().waitFor(
+    visible)`, and `.or()` resolves in DOM order — a hidden duplicate
+    earlier in the document ate the whole timeout while the real control
+    was on screen. Now polls each strategy every 250ms.
+  * click/fill/check re-resolve and retry once on detach/re-render errors
+    (NOT on a plain timeout — that would only double the wait).
+  * fill() verifies the value landed and falls back to pressSequentially:
+    a pre-join guest-name box is a controlled component that ignores the
+    one-shot write, so Join stayed disabled and the NEXT step looked broken.
+  * The session now follows the tab it is on (activePage.ts). Everything
+    was bound to `context.pages()[0]` for the life of the run, so a
+    meeting link opening a second tab froze the picture on the abandoned
+    first tab and ran the rest of the script against it.
+  * Screencast publishes a frame on attach and a keepalive after 10s of
+    quiet — CDP only pushes on repaint, so a parked/static page emitted
+    nothing at all.
+  * Scheduler: `getUsersByIds(ids, accountId ?? "")` on a group with no
+    account asks Postgres for `uuid = ''`, which is an ERROR, not an empty
+    result — it threw out of evaluateGroup every tick, so the group never
+    ran. Also: an empty roster launched a session-less job that "completed"
+    instantly (now says so and skips), and a launch that threw retried
+    every 20s for the whole window (now consumes the occurrence, alerts
+    once).
+  * WS: guarded sends (a frame published during teardown threw out of the
+    Redis callback), subscribe marked before awaiting, 30s ping.
+  * JobView polls the run every 10s and reconciles — the view was 100%
+    WebSocket-driven, so events missed during a drop were gone for good and
+    the grid froze silently. A resynced status is logged as such.
+- UX pass: dashboard task rows are actionable (Watch/Join now/Stop +
+  countdown) instead of read-only; group card's Delete/Clear-saved-logins
+  moved behind a "⋯" menu (they were two of six same-sized buttons, on the
+  way to Edit); step syntax was documented 3x as a run-on paragraph and had
+  already drifted — now one shared collapsed table (StepReference.tsx);
+  dashboard empty state is the 3 ordered steps with links.
+- Grid card now offers mouse control any time the browser is open, matching
+  the modal. It previously offered it only when parked, so clicking a card
+  mid-script silently did nothing.
+
 NEXT: user said more features are coming later; nothing specific queued
 right now. Open decision point from an earlier turn: whether to add a
 lightweight shared-API-token auth gate before this goes on a real server
@@ -108,6 +150,16 @@ GOTCHAS:
 - nginx `$host` strips the port; use `$http_host` when proxying anything
   the origin/host check downstream cares about (bit us on the WS Origin
   check once already).
+- Local git on this machine: the global ~/.gitconfig includeIf is written
+  as `gitdir:C:/ABHI/` but the real path is `C:/Abhi`, so it does NOT match
+  and repos here have no user.name/email or credential helper. Set them
+  repo-locally, or change the global to `gitdir/i:`. The credential file
+  C:/Abhi/.git-credentials was also written with a UTF-8 BOM and CRLF line
+  endings — git's credential-store parses the  as part of the hostname,
+  so it silently returns nothing and every fetch/push falls through to a
+  GUI prompt. A `git fetch` failing this way prints NOTHING and leaves
+  origin/main stale, which then makes `git pull` say "Already up to date"
+  on a branch that is genuinely behind. Both fixed in place.
 - Local Chrome-devtools screenshot/zoom tool is flaky in this environment
   (times out) independent of app state — verify UI via computed-style
   JS checks through the same tool instead of fighting for a screenshot.
