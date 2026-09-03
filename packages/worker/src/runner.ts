@@ -143,8 +143,19 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
     ...(proxy ? { proxy } : {}),
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    // A meeting's pre-join "Join" button stays disabled until the page's own
+    // getUserMedia() check for a camera/mic resolves — with neither granted
+    // nor a real device present, that call just hangs forever and Join never
+    // enables, which is what a 30s timeout on "click Join" actually means.
+    // Granting the permission AND feeding Chromium a fake device (there's no
+    // real camera on this server either way) makes it resolve immediately
+    // instead of hanging, regardless of whether the step script also clicks
+    // a "continue without audio/video" toggle.
+    permissions: ["camera", "microphone"],
     args: [
       "--disable-blink-features=AutomationControlled",
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
       // Chromium as root (the container's user) can't sandbox a headful
       // browser; the virtual-display login needs this.
       ...(isLoginCapture ? ["--no-sandbox"] : []),
