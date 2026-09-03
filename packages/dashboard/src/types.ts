@@ -195,3 +195,29 @@ export interface OrganizationWithCounts extends Organization {
   groupCount: number;
   userCount: number;
 }
+
+/** A login to this platform — as opposed to a `PlatformUser`, which is a
+ * person an automation signs in AS. Two different things that were briefly
+ * given the same name. */
+export type AccountRole = "admin" | "owner";
+export type AccountStatus = "pending" | "active" | "rejected" | "suspended";
+
+/** What the dashboard is told about whoever is signed in. */
+export interface SessionAccount {
+  id: string;
+  email: string;
+  username: string | null;
+  name: string;
+  workspaceName: string;
+  role: AccountRole;
+  createdAt: string;
+}
+
+/** The fuller row the admin's Accounts list shows. */
+export interface Account extends SessionAccount {
+  phone: string;
+  purpose: string;
+  status: AccountStatus;
+  approvedAt: string | null;
+  lastLoginAt: string | null;
+}

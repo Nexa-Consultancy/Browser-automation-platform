@@ -8,6 +8,7 @@ import {
   updateTemplate,
 } from "@automation/db";
 import { linesOf } from "../services/launch.js";
+import { accountId, requireAuth } from "../auth/context.js";
 
 interface TemplateBody {
   name?: string;
@@ -23,25 +24,22 @@ function parseTemplateBody(body: TemplateBody): { value: { name: string; steps: 
 }
 
 export async function templateRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/api/templates", async () => {
-    const templates = await listTemplates();
+  // Templates are per-workspace: each account has its own scripts and picks
+  // its own defaults. Set once on the plugin so a route added later cannot
+  // be left unauthenticated by accident.
+  app.addHook("preHandler", requireAuth);
+
+  app.get("/api/templates", async (req) => {
+    const templates = await listTemplates(accountId(req));
     return { templates };
   });
 
   app.post("/api/templates", async (req, reply) => {
+    const account = accountId(req);
     const parsed = parseTemplateBody((req.body ?? {}) as TemplateBody);
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
-    const template = await createTemplate(parsed.value);
+    const template = await createTemplate({ ...parsed.value, accountId: account });
     reply.code(201).send({ template });
-  });
-
-  app.put("/api/templates/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const parsed = parseTemplateBody((req.body ?? {}) as TemplateBody);
-    if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
-    const template = await updateTemplate(id, parsed.value);
-    if (!template) return reply.code(404).send({ error: "not found" });
-    reply.send({ template });
   });
 
   /**
@@ -51,26 +49,38 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
    * naming it that way makes "move the default" a single call instead of a
    * clear-then-set the client could half-finish.
    *
-   * Registered before DELETE /api/templates/:id purely for readability;
-   * Fastify routes on the full path, so the two never overlap.
+   * Registered before PUT /api/templates/:id so the literal path wins:
+   * Fastify would otherwise be free to read "default" as an :id.
    */
   app.put("/api/templates/default", async (req, reply) => {
+    const account = accountId(req);
     const { scope, templateId } = (req.body ?? {}) as { scope?: string; templateId?: string | null };
     if (!isTemplateScope(scope)) {
       return reply.code(400).send({ error: 'scope must be "group" or "user"' });
     }
     const id = templateId?.trim() || null;
-    const ok = await setDefaultTemplate(scope, id);
+    const ok = await setDefaultTemplate(account, scope, id);
     if (!ok) return reply.code(404).send({ error: "that template no longer exists" });
-    return { templates: await listTemplates() };
+    return { templates: await listTemplates(account) };
+  });
+
+  app.put("/api/templates/:id", async (req, reply) => {
+    const account = accountId(req);
+    const { id } = req.params as { id: string };
+    const parsed = parseTemplateBody((req.body ?? {}) as TemplateBody);
+    if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
+    const template = await updateTemplate(id, account, parsed.value);
+    if (!template) return reply.code(404).send({ error: "not found" });
+    reply.send({ template });
   });
 
   app.delete("/api/templates/:id", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
     // Deleting the row clears its default with it (the column goes too), so
     // the scope simply falls back to the built-in behaviour until someone
     // picks a new default.
-    const ok = await deleteTemplate(id);
+    const ok = await deleteTemplate(id, account);
     if (!ok) return reply.code(404).send({ error: "not found" });
     reply.send({ ok: true });
   });

@@ -109,7 +109,7 @@ export function AddUserModal({
     >
       <div className="modal-panel modal-form" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{editing ? `Edit ${user!.name}` : groupName ? `Add a user to ${groupName}` : "Add user"}</span>
+          <span>{editing ? `Edit ${user!.name}` : groupName ? `Add a person to ${groupName}` : "Add person"}</span>
           <button type="button" onClick={requestClose}>
             ✕
           </button>
@@ -155,7 +155,7 @@ export function AddUserModal({
               <div className="hint">
                 {groupName
                   ? `Saving also puts them straight into ${groupName}.`
-                  : "Which company or client this user belongs to."}
+                  : "Which company or client this person belongs to."}
               </div>
             </div>
             <div className="form-row">

@@ -1,10 +1,14 @@
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import websocketPlugin from "@fastify/websocket";
 import { migrate } from "@automation/db";
 import { groupRoutes } from "./routes/groups.js";
 import { organizationRoutes } from "./routes/organizations.js";
+import { authRoutes } from "./routes/auth.js";
+import { accountRoutes } from "./routes/accounts.js";
+import { seedAccounts } from "./auth/seed.js";
 import { historyRoutes } from "./routes/history.js";
 import { systemRoutes } from "./routes/system.js";
 import { jobRoutes } from "./routes/jobs.js";
@@ -28,10 +32,14 @@ async function main() {
   }
 
   await migrate();
+  await seedAccounts({ info: (m) => console.log(m), error: (m) => console.error(m) });
 
   const app = Fastify({ logger: true });
 
-  await app.register(cors, { origin: true });
+  // credentials: the dashboard sends its session cookie, which a bare
+  // `origin: true` would not allow on a cross-origin dev setup.
+  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cookie);
   await app.register(multipart);
   await app.register(websocketPlugin);
 
@@ -44,6 +52,8 @@ async function main() {
   await app.register(sessionRoutes);
   await app.register(userRoutes);
   await app.register(templateRoutes);
+  await app.register(authRoutes);
+  await app.register(accountRoutes);
   await app.register(organizationRoutes);
   await app.register(registerWs);
 

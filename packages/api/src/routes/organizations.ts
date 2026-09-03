@@ -8,6 +8,7 @@ import {
   organizationContents,
   updateOrganization,
 } from "@automation/db";
+import { accountId, requireAuth } from "../auth/context.js";
 
 const MAX_NAME = 80;
 const MAX_DESCRIPTION = 240;
@@ -24,15 +25,18 @@ function parseBody(body: { name?: string; description?: string }): { value: { na
 }
 
 export async function organizationRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/api/organizations", async () => {
-    return { organizations: await listOrganizations() };
+  app.addHook("preHandler", requireAuth);
+
+  app.get("/api/organizations", async (req) => {
+    return { organizations: await listOrganizations(accountId(req)) };
   });
 
   app.post("/api/organizations", async (req, reply) => {
+    const account = accountId(req);
     const parsed = parseBody((req.body ?? {}) as { name?: string; description?: string });
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
     try {
-      const organization = await createOrganization(parsed.value);
+      const organization = await createOrganization({ ...parsed.value, accountId: account });
       reply.code(201).send({ organization });
     } catch (err) {
       if (err instanceof DuplicateOrganizationName) return reply.code(409).send({ error: err.message });
@@ -41,11 +45,12 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.put("/api/organizations/:id", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
     const parsed = parseBody((req.body ?? {}) as { name?: string; description?: string });
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
     try {
-      const organization = await updateOrganization(id, parsed.value);
+      const organization = await updateOrganization(id, account, parsed.value);
       if (!organization) return reply.code(404).send({ error: "not found" });
       reply.send({ organization });
     } catch (err) {
@@ -61,8 +66,9 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
    * emptying it stays a deliberate act.
    */
   app.delete("/api/organizations/:id", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const organization = await getOrganization(id);
+    const organization = await getOrganization(id, account);
     if (!organization) return reply.code(404).send({ error: "not found" });
 
     const { groups, users } = await organizationContents(id);
@@ -76,7 +82,7 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    await deleteOrganization(id);
+    await deleteOrganization(id, account);
     reply.send({ ok: true });
   });
 }

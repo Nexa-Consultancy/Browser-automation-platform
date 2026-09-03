@@ -1,4 +1,11 @@
-import { claimGroupOccurrence, getJob, getSettings, getUsersByIds, listGroups, releaseGroupRun } from "@automation/db";
+import {
+  claimGroupOccurrence,
+  getJob,
+  getSettings,
+  getUsersByIds,
+  listAllGroups,
+  releaseGroupRun,
+} from "@automation/db";
 import {
   buildLinkedUsers,
   buildNamedUsers,
@@ -60,7 +67,7 @@ export function startGroupScheduler(log: Logger): () => void {
       const settings = await getSettings().catch(() => ({}) as Record<string, string>);
       if (settings.SCHEDULER_PAUSED === "true") return;
 
-      for (const group of await listGroups()) {
+      for (const group of await listAllGroups()) {
         try {
           await evaluateGroup(group, log);
         } catch (err) {
@@ -134,13 +141,16 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
   if (state.inWindow) {
     if (group.activeJobId || group.lastOccurrenceKey === state.occurrenceKey) return;
 
-    const linked = await getUsersByIds(group.userIds);
+    // The scheduler has no account of its own; a group already names the
+    // workspace it belongs to, so scope the roster lookup to that.
+    const linked = await getUsersByIds(group.userIds, group.accountId ?? "");
     const users = [...buildNamedUsers(group.userNames), ...buildLinkedUsers(linked)];
     const { job } = await launchJob({
       name: `${group.name} — ${state.occurrenceKey}`,
       targetUrl: group.targetUrl,
       steps: group.steps,
       users,
+      accountId: group.accountId,
       groupId: group.id,
     });
 

@@ -77,14 +77,20 @@ export async function writeLog(input: {
   return toLog(rows[0]);
 }
 
-export async function listLogs(opts: { level?: LogLevel; limit?: number } = {}): Promise<SystemLog[]> {
+export async function listLogs(
+  accountId: string,
+  opts: { level?: LogLevel; limit?: number } = {},
+): Promise<SystemLog[]> {
   const limit = Math.min(opts.limit ?? 300, 1000);
   const { rows } = opts.level
     ? await pool.query<LogDbRow>(
-        `SELECT * FROM system_logs WHERE level = $1 ORDER BY created_at DESC LIMIT $2`,
-        [opts.level, limit],
+        `SELECT * FROM system_logs WHERE level = $1 AND account_id = $3 ORDER BY created_at DESC LIMIT $2`,
+        [opts.level, limit, accountId],
       )
-    : await pool.query<LogDbRow>(`SELECT * FROM system_logs ORDER BY created_at DESC LIMIT $1`, [limit]);
+    : await pool.query<LogDbRow>(
+        `SELECT * FROM system_logs WHERE account_id = $2 ORDER BY created_at DESC LIMIT $1`,
+        [limit, accountId],
+      );
   return rows.map(toLog);
 }
 

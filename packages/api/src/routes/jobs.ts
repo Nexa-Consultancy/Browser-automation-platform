@@ -3,8 +3,11 @@ import { getJob, listJobs, listSessionsByJob } from "@automation/db";
 import { parseUserCsv, buildDefaultUsers, buildNamedUsers } from "@automation/shared";
 import { publishControl } from "../pubsub.js";
 import { launchJob, linesOf, normalizeSteps, stopJob } from "../services/launch.js";
+import { accountId, requireAuth } from "../auth/context.js";
 
 export async function jobRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook("preHandler", requireAuth);
+
   // multipart: CSV file field "csv" (optional) + form fields name/targetUrl/
   // steps/userCount/names. No CSV + no names means N synthetic users
   // (userCount); names (comma-separated) takes priority over userCount and
@@ -59,12 +62,13 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       targetUrl: targetUrl.trim(),
       steps,
       users,
+      accountId: accountId(req),
     });
 
     reply.code(201).send({ job, sessions });
   });
 
-  app.get("/api/jobs", async () => ({ jobs: await listJobs() }));
+  app.get("/api/jobs", async (req) => ({ jobs: await listJobs(accountId(req)) }));
 
   app.get("/api/jobs/:id", async (req, reply) => {
     const { id } = req.params as { id: string };

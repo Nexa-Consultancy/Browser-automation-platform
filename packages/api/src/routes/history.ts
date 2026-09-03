@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { accountId, requireAuth } from "../auth/context.js";
 import { listRunHistory } from "@automation/db";
 import { serverTimezone, type DailyReport, type RunHistoryRow } from "@automation/shared";
 
@@ -31,9 +32,11 @@ function dailyReports(rows: RunHistoryRow[], timezone: string): DailyReport[] {
 }
 
 export async function historyRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/api/history", async () => {
+  app.addHook("preHandler", requireAuth);
+
+  app.get("/api/history", async (req) => {
     const tz = serverTimezone();
-    const runs = await listRunHistory(200);
+    const runs = await listRunHistory(accountId(req), 200);
     return {
       runs: runs.map((r) => ({ ...r, localDate: localDate(r.createdAt, tz) })),
       daily: dailyReports(runs, tz),

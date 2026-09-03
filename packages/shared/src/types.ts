@@ -109,6 +109,9 @@ export interface PlatformUser {
 export interface Group {
   id: string;
   name: string;
+  /** The workspace (account) this group belongs to. The scheduler runs with
+   * no account of its own, so a group has to carry its own. */
+  accountId: string | null;
   /** The organization this group is a department of, or null when it has
    * never been filed under one (shown as "Unassigned"). */
   organizationId: string | null;

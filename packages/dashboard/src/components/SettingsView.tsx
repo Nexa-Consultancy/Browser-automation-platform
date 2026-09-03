@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "../api";
 import { TemplatesSettings } from "./TemplatesSettings";
+import { AccountsSettings } from "./AccountsSettings";
+import type { SessionAccount } from "../types";
 
 type Settings = Record<string, string>;
 
@@ -26,9 +28,9 @@ function Field({
   );
 }
 
-type Tab = "templates" | "integrations" | "advanced";
+type Tab = "templates" | "accounts" | "integrations" | "advanced";
 
-export function SettingsView() {
+export function SettingsView({ account }: { account: SessionAccount }) {
   const [tab, setTab] = useState<Tab>("templates");
   const [s, setS] = useState<Settings>({});
   const [loaded, setLoaded] = useState(false);
@@ -187,8 +189,12 @@ export function SettingsView() {
 
   const on = (k: string) => s[k] === "true";
 
+  // Accounts is the platform-wide list of logins, so only an admin sees
+  // the tab at all — the API refuses it either way, but offering a tab
+  // that always 403s would just look broken.
   const TABS: { id: Tab; label: string }[] = [
     { id: "templates", label: "Templates" },
+    ...(account.role === "admin" ? [{ id: "accounts" as Tab, label: "Accounts" }] : []),
     { id: "integrations", label: "Integrations" },
     { id: "advanced", label: "Advanced" },
   ];
@@ -198,9 +204,11 @@ export function SettingsView() {
       <div className="job-toolbar">
         <div className="job-toolbar-title">
           <h2>Settings</h2>
-          {tab !== "templates" && <span className="hint">Applies to every run — scheduled and one-off.</span>}
+          {tab !== "templates" && tab !== "accounts" && (
+            <span className="hint">Applies to every run — scheduled and one-off.</span>
+          )}
         </div>
-        {tab !== "templates" && (
+        {tab !== "templates" && tab !== "accounts" && (
           <div className="job-toolbar-actions">
             <button className="primary" onClick={save} disabled={saving}>
               {saving ? "Saving…" : "Save settings"}
@@ -231,6 +239,8 @@ export function SettingsView() {
 
         <div className="settings-content">
           {tab === "templates" && <TemplatesSettings />}
+
+          {tab === "accounts" && <AccountsSettings currentAccountId={account.id} />}
 
           {tab === "integrations" && (
             <div className="settings-grid">

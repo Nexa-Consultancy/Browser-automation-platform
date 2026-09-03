@@ -6,16 +6,18 @@ import {
   screencastLastFrameKey,
   controlChannel,
 } from "@automation/queue";
-import { listSessionsByJob } from "@automation/db";
+import { jobBelongsToAccount, listSessionsByJob } from "@automation/db";
+import { accountFromRequest } from "./auth/context.js";
 import type { ControlMessage } from "@automation/shared";
 
 // Unlike fetch/XHR, a browser will happily open a WebSocket to any origin —
 // same-origin policy doesn't apply to the connection itself. Without this
 // check, any third-party page a viewer merely has open in another tab could
 // connect here and, given a job id, ride along on its event/screencast
-// stream and send input actions. This isn't a substitute for real
-// authentication (there isn't any yet — see the README) but it closes the
-// no-visit-required drive-by version of that gap.
+// stream and send input actions. Real authentication now runs alongside it
+// (the session cookie is checked on connect, and job ownership on
+// subscribe); this stays as the cheap first gate that rejects a drive-by
+// before any of that work happens.
 function isAllowedOrigin(origin: string | undefined, host: string | undefined): boolean {
   if (!origin) return true; // non-browser clients (curl, server-to-server) send no Origin header
   try {
@@ -33,9 +35,19 @@ function isAllowedOrigin(origin: string | undefined, host: string | undefined): 
  * other direction over the same socket for minimum latency.
  */
 export async function registerWs(app: FastifyInstance): Promise<void> {
-  app.get("/ws", { websocket: true }, (socket, request) => {
+  app.get("/ws", { websocket: true }, async (socket, request) => {
     if (!isAllowedOrigin(request.headers.origin, request.headers.host)) {
       socket.close(1008, "origin not allowed");
+      return;
+    }
+
+    // Real authentication, not just an origin check: the socket carries the
+    // same session cookie the REST API uses, and a connection that cannot
+    // name a signed-in account is closed before it can subscribe to
+    // anything.
+    const account = await accountFromRequest(request);
+    if (!account) {
+      socket.close(1008, "not signed in");
       return;
     }
 
@@ -61,6 +73,13 @@ export async function registerWs(app: FastifyInstance): Promise<void> {
       }
 
       if (msg.type === "subscribe" && msg.jobId) {
+        // A job id is guessable, and the stream carries live screenshots of
+        // somebody's browser — so ownership is checked here, not assumed
+        // from the fact that the socket authenticated at all.
+        if (!(await jobBelongsToAccount(msg.jobId, account.id))) {
+          socket.send(JSON.stringify({ type: "error", error: "not found" }));
+          return;
+        }
         const evCh = eventsChannel(msg.jobId);
         if (!subscribed.has(evCh)) {
           await sub.subscribe(evCh);

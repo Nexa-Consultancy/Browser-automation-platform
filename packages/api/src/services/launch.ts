@@ -41,6 +41,9 @@ export async function launchJob(input: {
   steps: string[];
   users: CsvUserRow[];
   groupId?: string | null;
+  /** The workspace this run belongs to, so its history and live view stay
+   * private to that account. */
+  accountId?: string | null;
 }): Promise<{ job: Job; sessions: SessionRow[] }> {
   const concurrency = Math.min(input.users.length, 50);
   const job = await createJob({
@@ -49,6 +52,7 @@ export async function launchJob(input: {
     steps: input.steps,
     concurrency,
     groupId: input.groupId ?? null,
+    accountId: input.accountId ?? null,
   });
   const sessions = await createSessions(job.id, input.users, input.steps.length);
   await enqueueJob(job.id);

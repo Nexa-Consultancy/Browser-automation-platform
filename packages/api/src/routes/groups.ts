@@ -31,6 +31,7 @@ import { launchJob, normalizeSteps, stopJob } from "../services/launch.js";
 import { clearGroupProfiles, seedGroupFromMaster, masterLoginExists } from "../services/profiles.js";
 import { userLoginExists } from "../services/users.js";
 import { raiseAlert } from "../alerts.js";
+import { accountId, requireAuth } from "../auth/context.js";
 
 const MAX_USERS_PER_GROUP = 200;
 
@@ -53,13 +54,13 @@ interface CreateGroupBody {
  * dashboard shows, computed server-side so the countdown reflects the
  * server's clock — the only clock that actually fires these — plus display
  * info for this group's linked PlatformUsers. */
-async function withSchedule(group: Group): Promise<GroupWithSchedule> {
+async function withSchedule(group: Group, account: string): Promise<GroupWithSchedule> {
   const now = zonedNow(group.timezone);
   // Schedule against the lead-adjusted start, not the time the user typed —
   // that's the whole point of the lead.
   const start = effectiveStartMinutes(parseHhMm(group.startTime), group.leadMinutes);
   const state = windowStateAt(start, parseHhMm(group.endTime), now, group.days);
-  const linked = await getUsersByIds(group.userIds);
+  const linked = await getUsersByIds(group.userIds, account);
   return {
     ...group,
     schedule: {
@@ -160,38 +161,50 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
 }
 
 /** null (Unassigned) is always fine; a named organization has to exist. */
-async function organizationMissing(organizationId: string | null): Promise<boolean> {
-  return organizationId !== null && !(await getOrganization(organizationId));
+async function organizationMissing(organizationId: string | null, account: string): Promise<boolean> {
+  return organizationId !== null && !(await getOrganization(organizationId, account));
 }
 
 export async function groupRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/api/groups", async () => {
-    const groups = await listGroups();
-    return { groups: await Promise.all(groups.map(withSchedule)), serverTimezone: serverTimezone() };
+  // Every group route is tenant data: no exceptions, so the hook is set
+  // once on the whole plugin rather than per route, where a new route
+  // could be added without one.
+  app.addHook("preHandler", requireAuth);
+
+  app.get("/api/groups", async (req) => {
+    const account = accountId(req);
+    const groups = await listGroups(account);
+    return {
+      groups: await Promise.all(groups.map((g) => withSchedule(g, account))),
+      serverTimezone: serverTimezone(),
+    };
   });
 
   app.get("/api/groups/:id", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
-    return { group: await withSchedule(group), serverTimezone: serverTimezone() };
+    return { group: await withSchedule(group, account), serverTimezone: serverTimezone() };
   });
 
   app.post("/api/groups", async (req, reply) => {
+    const account = accountId(req);
     const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
-    if (await organizationMissing(parsed.value.organizationId)) {
+    if (await organizationMissing(parsed.value.organizationId, account)) {
       return reply.code(400).send({ error: "that organization no longer exists" });
     }
-    if ((await getUsersByIds(parsed.value.userIds)).length !== parsed.value.userIds.length) {
+    if ((await getUsersByIds(parsed.value.userIds, account)).length !== parsed.value.userIds.length) {
       return reply.code(400).send({ error: "one or more selected users no longer exist" });
     }
 
     const group = await createGroup({
       ...parsed.value,
+      accountId: account,
       name: parsed.value.name || `Group ${new Date().toISOString()}`,
     });
-    reply.code(201).send({ group: await withSchedule(group) });
+    reply.code(201).send({ group: await withSchedule(group, account) });
   });
 
   /**
@@ -201,38 +214,40 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
    * its run history.
    */
   app.put("/api/groups/:id", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const existing = await getGroup(id);
+    const existing = await getGroup(id, account);
     if (!existing) return reply.code(404).send({ error: "not found" });
 
     const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
-    if (await organizationMissing(parsed.value.organizationId)) {
+    if (await organizationMissing(parsed.value.organizationId, account)) {
       return reply.code(400).send({ error: "that organization no longer exists" });
     }
-    if ((await getUsersByIds(parsed.value.userIds)).length !== parsed.value.userIds.length) {
+    if ((await getUsersByIds(parsed.value.userIds, account)).length !== parsed.value.userIds.length) {
       return reply.code(400).send({ error: "one or more selected users no longer exist" });
     }
 
-    const group = await updateGroup(id, {
+    const group = await updateGroup(id, account, {
       ...parsed.value,
       name: parsed.value.name || existing.name,
     });
     if (!group) return reply.code(404).send({ error: "not found" });
-    reply.send({ group: await withSchedule(group) });
+    reply.send({ group: await withSchedule(group, account) });
   });
 
   app.patch("/api/groups/:id", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { enabled?: boolean };
     if (typeof body.enabled !== "boolean") {
       return reply.code(400).send({ error: "enabled (boolean) is required" });
     }
-    const group = await setGroupEnabled(id, body.enabled);
+    const group = await setGroupEnabled(id, account, body.enabled);
     if (!group) return reply.code(404).send({ error: "not found" });
     // Turning a group off while its window is live is handled by the
     // scheduler's next tick, which stops the run it's holding open.
-    return { group: await withSchedule(group) };
+    return { group: await withSchedule(group, account) };
   });
 
   /**
@@ -242,13 +257,14 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
    * into it — this is that second half.
    */
   app.post("/api/groups/:id/users", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
     const { userId } = (req.body ?? {}) as { userId?: string };
     if (!userId?.trim()) return reply.code(400).send({ error: "userId is required" });
 
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
-    if ((await getUsersByIds([userId])).length === 0) {
+    if ((await getUsersByIds([userId], account)).length === 0) {
       return reply.code(400).send({ error: "that user no longer exists" });
     }
     if (group.userNames.length + group.userIds.length >= MAX_USERS_PER_GROUP) {
@@ -256,27 +272,29 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     }
 
     await addUserToGroup(id, userId);
-    const updated = await getGroup(id);
-    reply.send({ group: await withSchedule(updated!) });
+    const updated = await getGroup(id, account);
+    reply.send({ group: await withSchedule(updated!, account) });
   });
 
   /** Remove one user from this group only — they keep their login and stay
    * in every other group they belong to. */
   app.delete("/api/groups/:id/users/:userId", async (req, reply) => {
+    const account = accountId(req);
     const { id, userId } = req.params as { id: string; userId: string };
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
 
     await removeUserFromGroup(id, userId);
-    const updated = await getGroup(id);
-    reply.send({ group: await withSchedule(updated!) });
+    const updated = await getGroup(id, account);
+    reply.send({ group: await withSchedule(updated!, account) });
   });
 
   // Wipe a group's saved logins/cookies. The next run for each user starts
   // signed out and fresh — the fix for a stale or wrong Teams session.
   app.post("/api/groups/:id/clear-profiles", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
     if (group.activeJobId) {
       return reply.code(409).send({ error: "stop the group's current run before clearing its profiles" });
@@ -293,8 +311,9 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
   // each one opens Teams already signed in — the fix for the guest/cookie
   // error when a meeting link is opened cold.
   app.post("/api/groups/:id/apply-master", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
     if (group.activeJobId) {
       return reply.code(409).send({ error: "stop the group's current run before applying the master login" });
@@ -311,12 +330,13 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete("/api/groups/:id", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
     // Don't strand a live run with no group left to stop it.
     if (group.activeJobId) await stopJob(group.activeJobId);
-    await deleteGroup(id);
+    await deleteGroup(id, account);
     reply.send({ ok: true });
   });
 
@@ -327,14 +347,15 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
    * still happens on time. The window's end still stops it.
    */
   app.post("/api/groups/:id/run-now", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
     if (group.activeJobId) {
       return reply.code(409).send({ error: "this group already has a run in progress" });
     }
 
-    const linked = await getUsersByIds(group.userIds);
+    const linked = await getUsersByIds(group.userIds, account);
     const { job } = await launchJob({
       name: `${group.name} — manual run`,
       targetUrl: group.targetUrl,
@@ -355,8 +376,9 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
 
   /** Stop the run this group is currently holding open, before its end time. */
   app.post("/api/groups/:id/stop-now", async (req, reply) => {
+    const account = accountId(req);
     const { id } = req.params as { id: string };
-    const group = await getGroup(id);
+    const group = await getGroup(id, account);
     if (!group) return reply.code(404).send({ error: "not found" });
     if (!group.activeJobId) return reply.code(409).send({ error: "this group has no run in progress" });
 

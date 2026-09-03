@@ -7,6 +7,9 @@ import type {
   PlatformUser,
   RunHistoryRow,
   SessionRow,
+  Account,
+  AccountStatus,
+  SessionAccount,
   StepTemplate,
   TemplateScope,
 } from "./types";
@@ -463,4 +466,101 @@ export async function bulkDeleteUsers(userIds: string[]): Promise<{ ok: boolean;
       body: JSON.stringify({ userIds }),
     }),
   );
+}
+
+// ---------- who is signed in ----------
+
+/** 200 with a null account when nobody is signed in — "not signed in" is an
+ * answer here, not an error, so this never throws for the common case. */
+export async function getSession(): Promise<{ account: SessionAccount | null }> {
+  return json(await fetch(`${API_BASE}/api/auth/me`));
+}
+
+export async function login(input: { login: string; password: string }): Promise<{ account: SessionAccount }> {
+  return json(
+    await fetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function logout(): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/auth/logout`, { method: "POST" }));
+}
+
+export interface SignupInput {
+  name: string;
+  email: string;
+  password: string;
+  phone: string;
+  workspaceName: string;
+  purpose: string;
+}
+
+export async function signup(input: SignupInput): Promise<{ ok: boolean; status: string }> {
+  return json(
+    await fetch(`${API_BASE}/api/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/** Always succeeds, whether or not the address has an account — the server
+ * deliberately doesn't say which. */
+export async function requestPasswordReset(email: string): Promise<{ ok: boolean; message: string }> {
+  return json(
+    await fetch(`${API_BASE}/api/auth/forgot`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    }),
+  );
+}
+
+export async function resetPassword(input: { token: string; password: string }): Promise<{ ok: boolean }> {
+  return json(
+    await fetch(`${API_BASE}/api/auth/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function changePassword(input: {
+  currentPassword: string;
+  password: string;
+}): Promise<{ ok: boolean }> {
+  return json(
+    await fetch(`${API_BASE}/api/auth/change-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+// ---------- accounts (admin only) ----------
+
+export async function listAccounts(): Promise<{ accounts: Account[] }> {
+  return json(await fetch(`${API_BASE}/api/accounts`));
+}
+
+export async function setAccountStatus(id: string, status: AccountStatus): Promise<{ account: Account }> {
+  return json(
+    await fetch(`${API_BASE}/api/accounts/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }),
+  );
+}
+
+/** Deletes the account AND its whole workspace. No undo. */
+export async function deleteAccount(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/accounts/${id}`, { method: "DELETE" }));
 }

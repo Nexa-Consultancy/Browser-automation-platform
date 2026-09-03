@@ -5,6 +5,7 @@ export interface UserRecord {
   name: string;
   email: string;
   organizationId: string | null;
+  accountId: string | null;
   activeJobId: string | null;
   createdAt: string;
 }
@@ -14,6 +15,7 @@ interface UserDbRow {
   name: string;
   email: string;
   organization_id: string | null;
+  account_id: string | null;
   active_job_id: string | null;
   created_at: Date;
 }
@@ -24,6 +26,7 @@ function toUser(r: UserDbRow): UserRecord {
     name: r.name,
     email: r.email,
     organizationId: r.organization_id,
+    accountId: r.account_id,
     activeJobId: r.active_job_id,
     createdAt: r.created_at.toISOString(),
   };
@@ -38,7 +41,7 @@ function encKey(): string {
 // Deliberately never SELECT * here — password_enc must only ever be read by
 // getUserPasswordPlain below, so every other query lists columns explicitly
 // and simply has no way to leak ciphertext into a response.
-const COLUMNS = "id, name, email, organization_id, active_job_id, created_at";
+const COLUMNS = "id, name, email, organization_id, account_id, active_job_id, created_at";
 
 export class DuplicateUserEmail extends Error {
   constructor(email: string) {
@@ -61,13 +64,14 @@ export async function createUser(input: {
   email: string;
   password: string;
   organizationId: string | null;
+  accountId: string;
 }): Promise<UserRecord> {
   try {
     const { rows } = await pool.query<UserDbRow>(
-      `INSERT INTO users (name, email, password_enc, organization_id)
-       VALUES ($1, $2, pgp_sym_encrypt($3, $4), $5)
+      `INSERT INTO users (name, email, password_enc, organization_id, account_id)
+       VALUES ($1, $2, pgp_sym_encrypt($3, $4), $5, $6)
        RETURNING ${COLUMNS}`,
-      [input.name, input.email, input.password, encKey(), input.organizationId],
+      [input.name, input.email, input.password, encKey(), input.organizationId, input.accountId],
     );
     return toUser(rows[0]);
   } catch (err) {
@@ -77,45 +81,55 @@ export async function createUser(input: {
 
 /** Every user filed under one organization — the roster the Organizations
  * tab offers when linking people into that organization's groups. */
-export async function listUsersByOrganization(organizationId: string): Promise<UserRecord[]> {
+export async function listUsersByOrganization(organizationId: string, accountId: string): Promise<UserRecord[]> {
   const { rows } = await pool.query<UserDbRow>(
-    `SELECT ${COLUMNS} FROM users WHERE organization_id = $1 ORDER BY lower(name)`,
-    [organizationId],
+    `SELECT ${COLUMNS} FROM users WHERE organization_id = $1 AND account_id = $2 ORDER BY lower(name)`,
+    [organizationId, accountId],
   );
   return rows.map(toUser);
 }
 
-export async function listUsers(): Promise<UserRecord[]> {
-  const { rows } = await pool.query<UserDbRow>(`SELECT ${COLUMNS} FROM users ORDER BY created_at DESC LIMIT 500`);
+export async function listUsers(accountId: string): Promise<UserRecord[]> {
+  const { rows } = await pool.query<UserDbRow>(
+    `SELECT ${COLUMNS} FROM users WHERE account_id = $1 ORDER BY created_at DESC LIMIT 500`,
+    [accountId],
+  );
   return rows.map(toUser);
 }
 
-export async function getUser(id: string): Promise<UserRecord | null> {
-  const { rows } = await pool.query<UserDbRow>(`SELECT ${COLUMNS} FROM users WHERE id = $1`, [id]);
+export async function getUser(id: string, accountId: string): Promise<UserRecord | null> {
+  const { rows } = await pool.query<UserDbRow>(
+    `SELECT ${COLUMNS} FROM users WHERE id = $1 AND account_id = $2`,
+    [id, accountId],
+  );
   return rows[0] ? toUser(rows[0]) : null;
 }
 
 /** For resolving a group's linked roster — only the users that still exist. */
-export async function getUsersByIds(ids: string[]): Promise<UserRecord[]> {
+export async function getUsersByIds(ids: string[], accountId: string): Promise<UserRecord[]> {
   if (ids.length === 0) return [];
-  const { rows } = await pool.query<UserDbRow>(`SELECT ${COLUMNS} FROM users WHERE id = ANY($1::uuid[])`, [ids]);
+  const { rows } = await pool.query<UserDbRow>(
+    `SELECT ${COLUMNS} FROM users WHERE id = ANY($1::uuid[]) AND account_id = $2`,
+    [ids, accountId],
+  );
   return rows.map(toUser);
 }
 
 export async function updateUser(
   id: string,
+  accountId: string,
   input: { name: string; email: string; password?: string; organizationId: string | null },
 ): Promise<UserRecord | null> {
   try {
     const { rows } = input.password
       ? await pool.query<UserDbRow>(
           `UPDATE users SET name = $2, email = $3, organization_id = $6, password_enc = pgp_sym_encrypt($4, $5)
-            WHERE id = $1 RETURNING ${COLUMNS}`,
-          [id, input.name, input.email, input.password, encKey(), input.organizationId],
+            WHERE id = $1 AND account_id = $7 RETURNING ${COLUMNS}`,
+          [id, input.name, input.email, input.password, encKey(), input.organizationId, accountId],
         )
       : await pool.query<UserDbRow>(
-          `UPDATE users SET name = $2, email = $3, organization_id = $4 WHERE id = $1 RETURNING ${COLUMNS}`,
-          [id, input.name, input.email, input.organizationId],
+          `UPDATE users SET name = $2, email = $3, organization_id = $4 WHERE id = $1 AND account_id = $5 RETURNING ${COLUMNS}`,
+          [id, input.name, input.email, input.organizationId, accountId],
         );
     return rows[0] ? toUser(rows[0]) : null;
   } catch (err) {
@@ -123,8 +137,8 @@ export async function updateUser(
   }
 }
 
-export async function deleteUser(id: string): Promise<boolean> {
-  const { rowCount } = await pool.query(`DELETE FROM users WHERE id = $1`, [id]);
+export async function deleteUser(id: string, accountId: string): Promise<boolean> {
+  const { rowCount } = await pool.query(`DELETE FROM users WHERE id = $1 AND account_id = $2`, [id, accountId]);
   return (rowCount ?? 0) > 0;
 }
 
@@ -169,11 +183,15 @@ export async function removeUserFromAllGroups(id: string): Promise<void> {
  * Returns how many rows actually changed, so the caller can tell a real
  * move from a no-op on ids that have since been deleted.
  */
-export async function setUsersOrganization(ids: string[], organizationId: string | null): Promise<number> {
+export async function setUsersOrganization(
+  ids: string[],
+  organizationId: string | null,
+  accountId: string,
+): Promise<number> {
   if (ids.length === 0) return 0;
   const { rowCount } = await pool.query(
-    `UPDATE users SET organization_id = $2 WHERE id = ANY($1::uuid[])`,
-    [ids, organizationId],
+    `UPDATE users SET organization_id = $2 WHERE id = ANY($1::uuid[]) AND account_id = $3`,
+    [ids, organizationId, accountId],
   );
   return rowCount ?? 0;
 }
@@ -211,9 +229,12 @@ export async function removeUsersFromForeignGroups(
 }
 
 /** Bulk delete. Returns how many rows were actually removed. */
-export async function deleteUsers(ids: string[]): Promise<number> {
+export async function deleteUsers(ids: string[], accountId: string): Promise<number> {
   if (ids.length === 0) return 0;
-  const { rowCount } = await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [ids]);
+  const { rowCount } = await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[]) AND account_id = $2`, [
+    ids,
+    accountId,
+  ]);
   return rowCount ?? 0;
 }
 

@@ -12,6 +12,7 @@ import {
 import { MASTER_LOGIN_JOB_NAME, buildDefaultUsers, serverTimezone } from "@automation/shared";
 import { raiseAlert, sendTestEmail, sendTestDiscord, sendTestTelegram, detectTelegramChats } from "../alerts.js";
 import { launchJob, stopJob } from "../services/launch.js";
+import { accountId, requireAuth } from "../auth/context.js";
 import { clearMaster, masterLoginExists, PROFILES_DIR } from "../services/profiles.js";
 import { enqueueBakeMaster } from "@automation/queue";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -35,6 +36,8 @@ export function proxyFromSettings(s: Record<string, string>): {
 }
 
 export async function systemRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook("preHandler", requireAuth);
+
   app.get("/api/settings", async () => {
     const s = await getSettings();
     return { settings: redactSettings(s), serverTimezone: serverTimezone() };
@@ -68,11 +71,12 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
    * the scheduler checks on every tick, so nothing new starts either. A
    * still-open group window just waits — see /resume below.
    */
-  app.post("/api/system/stop-all", async () => {
+  app.post("/api/system/stop-all", async (req) => {
+    const account = accountId(req);
     await updateSettings({ SCHEDULER_PAUSED: "true" });
 
     let stoppedGroups = 0;
-    for (const group of await listGroups()) {
+    for (const group of await listGroups(account)) {
       if (!group.activeJobId) continue;
       await stopJob(group.activeJobId);
       await releaseGroupRun(group.id, null, true);
@@ -80,7 +84,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
     }
 
     let stoppedJobs = 0;
-    for (const job of await listJobs()) {
+    for (const job of await listJobs(account)) {
       if (job.groupId) continue; // already covered above
       if (job.status === "pending" || job.status === "running") {
         await stopJob(job.id);
@@ -170,7 +174,7 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/logs", async (req) => {
     const q = req.query as { level?: string; limit?: string };
     const level = ["INFO", "WARN", "ERROR"].includes(q.level ?? "") ? (q.level as LogLevel) : undefined;
-    return { logs: await listLogs({ level, limit: Number(q.limit) || 300 }) };
+    return { logs: await listLogs(accountId(req), { level, limit: Number(q.limit) || 300 }) };
   });
 
   /**

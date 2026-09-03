@@ -4,6 +4,7 @@ import { pool } from "./pool.js";
 interface GroupDbRow {
   id: string;
   name: string;
+  account_id: string | null;
   organization_id: string | null;
   target_url: string;
   steps: string[];
@@ -27,6 +28,7 @@ function toGroup(r: GroupDbRow): Group {
   return {
     id: r.id,
     name: r.name,
+    accountId: r.account_id,
     organizationId: r.organization_id,
     targetUrl: r.target_url,
     steps: r.steps,
@@ -49,6 +51,7 @@ function toGroup(r: GroupDbRow): Group {
 
 export async function createGroup(input: {
   name: string;
+  accountId: string;
   organizationId: string | null;
   targetUrl: string;
   steps: string[];
@@ -62,8 +65,8 @@ export async function createGroup(input: {
   enabled: boolean;
 }): Promise<Group> {
   const { rows } = await pool.query<GroupDbRow>(
-    `INSERT INTO groups (name, target_url, steps, user_names, user_ids, start_time, end_time, lead_minutes, days, timezone, enabled, organization_id)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11, $12)
+    `INSERT INTO groups (name, target_url, steps, user_names, user_ids, start_time, end_time, lead_minutes, days, timezone, enabled, organization_id, account_id)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
      RETURNING *`,
     [
       input.name,
@@ -78,6 +81,7 @@ export async function createGroup(input: {
       input.timezone,
       input.enabled,
       input.organizationId,
+      input.accountId,
     ],
   );
   return toGroup(rows[0]);
@@ -94,6 +98,7 @@ export async function createGroup(input: {
  */
 export async function updateGroup(
   id: string,
+  accountId: string,
   input: {
     name: string;
     organizationId: string | null;
@@ -114,7 +119,7 @@ export async function updateGroup(
         SET name = $2, target_url = $3, steps = $4::jsonb, user_names = $5::jsonb,
             start_time = $6, end_time = $7, days = $8::jsonb, timezone = $9, enabled = $10,
             lead_minutes = $11, user_ids = $12::jsonb, organization_id = $13
-      WHERE id = $1
+      WHERE id = $1 AND account_id = $14
       RETURNING *`,
     [
       id,
@@ -130,30 +135,54 @@ export async function updateGroup(
       input.leadMinutes,
       JSON.stringify(input.userIds),
       input.organizationId,
+      accountId,
     ],
   );
   return rows[0] ? toGroup(rows[0]) : null;
 }
 
-export async function listGroups(): Promise<Group[]> {
-  const { rows } = await pool.query<GroupDbRow>(`SELECT * FROM groups ORDER BY created_at DESC LIMIT 200`);
+export async function listGroups(accountId: string): Promise<Group[]> {
+  const { rows } = await pool.query<GroupDbRow>(
+    `SELECT * FROM groups WHERE account_id = $1 ORDER BY created_at DESC LIMIT 200`,
+    [accountId],
+  );
   return rows.map(toGroup);
 }
 
-export async function getGroup(id: string): Promise<Group | null> {
+/**
+ * Every group in every workspace — for the scheduler only, which runs with
+ * no account of its own and must fire everybody's windows. Named so that
+ * reaching for it from a request handler looks as wrong as it would be.
+ */
+export async function listAllGroups(): Promise<Group[]> {
+  const { rows } = await pool.query<GroupDbRow>(`SELECT * FROM groups ORDER BY created_at DESC LIMIT 2000`);
+  return rows.map(toGroup);
+}
+
+export async function getGroup(id: string, accountId: string): Promise<Group | null> {
+  const { rows } = await pool.query<GroupDbRow>(
+    `SELECT * FROM groups WHERE id = $1 AND account_id = $2`,
+    [id, accountId],
+  );
+  return rows[0] ? toGroup(rows[0]) : null;
+}
+
+/** Unscoped lookup for the scheduler and the worker-facing paths, which
+ * act on a group they already hold the id of. */
+export async function getGroupUnscoped(id: string): Promise<Group | null> {
   const { rows } = await pool.query<GroupDbRow>(`SELECT * FROM groups WHERE id = $1`, [id]);
   return rows[0] ? toGroup(rows[0]) : null;
 }
 
-export async function deleteGroup(id: string): Promise<boolean> {
-  const { rowCount } = await pool.query(`DELETE FROM groups WHERE id = $1`, [id]);
+export async function deleteGroup(id: string, accountId: string): Promise<boolean> {
+  const { rowCount } = await pool.query(`DELETE FROM groups WHERE id = $1 AND account_id = $2`, [id, accountId]);
   return (rowCount ?? 0) > 0;
 }
 
-export async function setGroupEnabled(id: string, enabled: boolean): Promise<Group | null> {
+export async function setGroupEnabled(id: string, accountId: string, enabled: boolean): Promise<Group | null> {
   const { rows } = await pool.query<GroupDbRow>(
-    `UPDATE groups SET enabled = $2 WHERE id = $1 RETURNING *`,
-    [id, enabled],
+    `UPDATE groups SET enabled = $2 WHERE id = $1 AND account_id = $3 RETURNING *`,
+    [id, enabled, accountId],
   );
   return rows[0] ? toGroup(rows[0]) : null;
 }

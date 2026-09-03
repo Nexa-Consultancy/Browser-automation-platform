@@ -9,7 +9,7 @@ import { OrgUsersSection } from "./OrgUsersSection";
 
 /**
  * The company view: organizations on the left, the selected organization's
- * departments (groups) and users on the right.
+ * departments (groups) and people on the right.
  *
  * Groups and users existed before organizations did, so "no organization"
  * has to remain a real, visible place — UNASSIGNED is a pseudo-organization
@@ -27,7 +27,7 @@ interface OrgLike {
 const UNASSIGNED_ORG: OrgLike = {
   id: UNASSIGNED,
   name: "Unassigned",
-  description: "Groups and users that have not been filed under an organization yet.",
+  description: "Groups and people that have not been filed under an organization yet.",
 };
 
 /** null (the wire value) ↔ UNASSIGNED (the rail's id for the same thing). */
@@ -248,7 +248,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
         <div className="job-toolbar-title">
           <h2>Organizations</h2>
           <span className="hint">
-            an organization holds departments, a department holds users {serverTimezone && `· all times ${serverTimezone}`}
+            an organization holds departments, a department holds people {serverTimezone && `· all times ${serverTimezone}`}
           </span>
         </div>
       </div>
@@ -262,7 +262,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search everything — organization, group, user, link, or a time like 1:00 PM…"
+            placeholder="Search everything — organization, group, person, link, or a time like 1:00 PM…"
           />
         </div>
         {searching && (
@@ -271,7 +271,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
               {totalHits === 0
                 ? "no matches"
                 : `${matchedGroups.length} group${matchedGroups.length === 1 ? "" : "s"}, ${matchedUsers.length} ${
-                    matchedUsers.length === 1 ? "user" : "users"
+                    matchedUsers.length === 1 ? "person" : "people"
                   }`}
             </span>
             <button type="button" onClick={() => setQuery("")}>
@@ -352,7 +352,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
                     <span className="org-rail-name">{org.name}</span>
                     <span className="org-rail-counts">
                       {counts.groupCount} group{counts.groupCount === 1 ? "" : "s"} · {counts.userCount}{" "}
-                      {counts.userCount === 1 ? "user" : "users"}
+                      {counts.userCount === 1 ? "person" : "people"}
                     </span>
                   </button>
                 </li>
@@ -365,7 +365,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
           {loaded && rail.length === 0 ? (
             <div className="empty-state">
               Nothing here yet. Create an organization — your company, a client, a campus — then add departments to
-              it, and users to those.
+              it, and people to those.
             </div>
           ) : searching && shownOrgs.length === 0 ? (
             <div className="empty-state">Nothing matches “{query.trim()}”.</div>
@@ -429,7 +429,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
                           type="button"
                           onClick={() => setUserModal({ organizationId: wireOrgId(org), groupId: null, groupName: null })}
                         >
-                          + New user
+                          + New person
                         </button>
                         {record && (
                           <>
@@ -449,7 +449,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
                     <div className="org-empty-inline">
                       {searching
                         ? `No group in ${org.name} matches that search.`
-                        : `No groups in ${org.name} yet — create one (an "IT department", an evening class, a shift) and put users in it.`}
+                        : `No groups in ${org.name} yet — create one (an "IT department", an evening class, a shift) and put people in it.`}
                     </div>
                   ) : (
                     <div className="org-group-list">

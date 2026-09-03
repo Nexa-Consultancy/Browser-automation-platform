@@ -130,7 +130,12 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (lower(email));
+-- Superseded by idx_users_email_per_account further down: uniqueness is
+-- per workspace now, not global. Recreating the global one here would fail
+-- the moment two accounts share a person's email — and since this file is
+-- replayed on every boot, that would be an unbootable server, not a
+-- rejected write. Left as a note rather than a statement.
+
 
 -- A group's additional roster: real, reusable users linked in alongside the
 -- existing free-text user_names. Additive — legacy groups with only
@@ -197,7 +202,9 @@ CREATE TABLE IF NOT EXISTS organizations (
 -- Case-insensitive: "Acme" and "acme" as two organizations is a mistake,
 -- not a distinction, and the error is far easier to understand at creation
 -- time than a duplicated rail six months later.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_name ON organizations (lower(name));
+-- Superseded by idx_organizations_name_per_account (see the note on
+-- idx_users_email above): two companies may both have an "Acme".
+
 
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL;
@@ -214,8 +221,9 @@ CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id);
 -- old one rather than quietly leaving two.
 ALTER TABLE step_templates ADD COLUMN IF NOT EXISTS default_for TEXT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_step_templates_default_for
-  ON step_templates (default_for) WHERE default_for IS NOT NULL;
+-- Superseded by idx_step_templates_default_per_account: each workspace
+-- picks its own defaults, so "one row per scope" is per account.
+
 
 -- Adopt the two seeded templates as the starting defaults, but only if
 -- nothing already claims the scope — a real choice made in Settings must
@@ -233,3 +241,113 @@ UPDATE step_templates SET default_for = 'user'
 UPDATE step_templates SET default_for = 'group'
  WHERE id = '00000000-0000-0000-0000-000000000001'
    AND NOT EXISTS (SELECT 1 FROM step_templates WHERE default_for = 'group');
+
+-- ============================================================
+-- Accounts: who may sign into this platform at all.
+--
+-- Deliberately NOT the same thing as the `users` table. A row in `users` is
+-- a PERSON an automation signs in AS (their Microsoft/Teams identity, added
+-- to groups); a row here is a LOGIN to this dashboard. The two were briefly
+-- given the same name and it was confusing enough to be worth the split.
+--
+-- Each account owns its own organizations, groups and people — see the
+-- account_id columns further down. Nobody sees anyone else's.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Both are login identities; either one gets you in. Email is also where
+  -- a password reset is sent, so it is required even for the admin.
+  email TEXT NOT NULL,
+  username TEXT,
+  name TEXT NOT NULL,
+  -- What their space is called in the UI ("Nexa"). Distinct from the
+  -- organizations they create inside it.
+  workspace_name TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL DEFAULT '',
+  -- Free text from the signup form: what they intend to use it for. Kept
+  -- because it is the whole basis on which a signup is approved.
+  purpose TEXT NOT NULL DEFAULT '',
+  -- scrypt, stored as "scrypt$N$r$p$salt$hash" — see packages/api/src/auth/password.ts.
+  -- No plaintext password is ever written to this table.
+  password_hash TEXT NOT NULL,
+  -- 'admin' sees every account and approves signups; 'owner' sees only
+  -- their own workspace.
+  role TEXT NOT NULL DEFAULT 'owner',
+  -- 'pending' cannot log in — a signup waits here until an admin approves.
+  status TEXT NOT NULL DEFAULT 'pending',
+  approved_at TIMESTAMPTZ,
+  last_login_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_email ON accounts (lower(email));
+-- Partial: most accounts sign in by email and have no username at all, and
+-- several NULLs must not collide with each other.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_username
+  ON accounts (lower(username)) WHERE username IS NOT NULL;
+
+-- Long-lived logins. The cookie carries a random token; only its SHA-256
+-- lands here, so a database leak cannot be replayed as a live session.
+-- Named auth_sessions because `sessions` already means "one browser a
+-- worker is driving", which is an entirely different thing.
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash TEXT PRIMARY KEY,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  user_agent TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_account ON auth_sessions(account_id);
+
+-- Single-use, short-lived password reset links. Same hash-only rule as
+-- sessions: the emailed token is never stored, so the table cannot be used
+-- to take over an account.
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_resets_account ON password_resets(account_id);
+
+-- ---------- tenancy ----------
+-- Every tenant-owned table carries the account that owns it. CASCADE:
+-- deleting an account takes its whole workspace with it, which is the only
+-- coherent meaning of deleting an account when the data is private to it.
+--
+-- Nullable so the migration can run against a database that already has
+-- rows; the first boot adopts every orphan row into the seeded owner
+-- account (see adoptOrphanData in packages/api/src/auth/seed.ts).
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE CASCADE;
+ALTER TABLE groups        ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE CASCADE;
+ALTER TABLE users         ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE CASCADE;
+ALTER TABLE step_templates ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE CASCADE;
+ALTER TABLE jobs          ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE CASCADE;
+ALTER TABLE system_logs   ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_organizations_account ON organizations(account_id);
+CREATE INDEX IF NOT EXISTS idx_groups_account ON groups(account_id);
+CREATE INDEX IF NOT EXISTS idx_users_account ON users(account_id);
+CREATE INDEX IF NOT EXISTS idx_step_templates_account ON step_templates(account_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_account ON jobs(account_id);
+CREATE INDEX IF NOT EXISTS idx_system_logs_account ON system_logs(account_id);
+
+-- Uniqueness is now per-workspace, not global: two different companies must
+-- both be able to have an "IT department" person on ravi@example.com, and
+-- an organization called "Acme". The old global unique indexes would have
+-- made one tenant's data block another's.
+DROP INDEX IF EXISTS idx_users_email;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_per_account ON users (account_id, lower(email));
+
+DROP INDEX IF EXISTS idx_organizations_name;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_name_per_account
+  ON organizations (account_id, lower(name));
+
+-- Same for a template's default scope: each workspace picks its own.
+DROP INDEX IF EXISTS idx_step_templates_default_for;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_step_templates_default_per_account
+  ON step_templates (account_id, default_for) WHERE default_for IS NOT NULL;

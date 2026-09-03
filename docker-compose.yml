@@ -47,6 +47,24 @@ services:
       # at rest — only the api process ever decrypts it (see
       # packages/db/src/users.ts); the worker never sees this key.
       CREDENTIALS_ENC_KEY: ${CREDENTIALS_ENC_KEY}
+      # Bootstrap logins, created on first boot if they do not exist yet.
+      # Kept in .env (gitignored) so no real password reaches the repo.
+      # Changing a password here does NOT rewrite an account that already
+      # exists — rotate it from inside the app instead.
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      OWNER_EMAIL: ${OWNER_EMAIL}
+      OWNER_PASSWORD: ${OWNER_PASSWORD}
+      OWNER_NAME: ${OWNER_NAME}
+      OWNER_WORKSPACE: ${OWNER_WORKSPACE}
+      # Used to build password-reset links in email. Set this to the real
+      # public URL or the links point at whatever Host header arrives.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      # Session cookies are Secure by default. Set to "false" ONLY for a
+      # plain-HTTP deployment, where a Secure cookie would be dropped and
+      # login would silently do nothing.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
     ports:
       - "4000:4000"
     restart: unless-stopped

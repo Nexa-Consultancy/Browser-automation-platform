@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { GroupWithSchedule, OrganizationWithCounts, PlatformUser } from "../types";
 import * as api from "../api";
 import { UserStatusChip } from "./UserStatusChip";
+import { SignInCountdown } from "./SignInCountdown";
 
 /** The rail's id for "no organization" — kept identical to the constant in
  * OrganizationsView, which owns it. Null is always the wire value. */
@@ -47,6 +48,9 @@ export function OrgUsersSection({
   onOpenJob: (jobId: string) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  // When each person's sign-in run was first seen, so the countdown starts
+  // from the moment it appeared rather than restarting on every poll.
+  const [signInStartedAt, setSignInStartedAt] = useState<Record<string, number>>({});
   const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
 
@@ -66,6 +70,37 @@ export function OrgUsersSection({
       return next.length === prev.length ? prev : next;
     });
   }, [visibleIds]);
+
+  // Track sign-ins as they come and go: a new activeJobId starts a clock,
+  // and a finished run drops it so the countdown cannot outlive the job.
+  useEffect(() => {
+    setSignInStartedAt((prev) => {
+      const next: Record<string, number> = {};
+      let changed = false;
+      for (const u of users) {
+        if (!u.activeJobId) continue;
+        next[u.id] = prev[u.id] ?? Date.now();
+        if (prev[u.id] === undefined) changed = true;
+      }
+      if (!changed && Object.keys(next).length === Object.keys(prev).length) return prev;
+      return next;
+    });
+  }, [users]);
+
+  // Track sign-ins as they come and go: a new activeJobId starts a clock,
+  // and a finished run drops it, so a countdown can never outlive its job.
+  useEffect(() => {
+    setSignInStartedAt((prev) => {
+      const next: Record<string, number> = {};
+      for (const u of users) {
+        if (u.activeJobId) next[u.id] = prev[u.id] ?? Date.now();
+      }
+      const same =
+        Object.keys(next).length === Object.keys(prev).length &&
+        Object.keys(next).every((id) => prev[id] === next[id]);
+      return same ? prev : next;
+    });
+  }, [users]);
 
   const groupsIn = (orgId: string | null) =>
     allGroups.filter((g) => (g.organizationId ?? null) === orgId);
@@ -104,12 +139,12 @@ export function OrgUsersSection({
   }
 
   const count = selected.length;
-  const noun = count === 1 ? "user" : "users";
+  const noun = count === 1 ? "person" : "people";
 
   return (
     <div className="org-people">
       <div className="org-users-head">
-        <span className="eyebrow">Users in {organizationName}</span>
+        <span className="eyebrow">People in {organizationName}</span>
 
         {users.length > 0 && (
           <label className="org-select-all">
@@ -291,7 +326,7 @@ export function OrgUsersSection({
 
       {users.length === 0 ? (
         <div className="org-empty-inline">
-          No users in {organizationName} yet — add one from a group, or with “+ New user” above.
+          No people in {organizationName} yet — add one from a group, or with “+ New person” above.
         </div>
       ) : (
         <div className="org-people-grid">
@@ -305,7 +340,11 @@ export function OrgUsersSection({
                     <input type="checkbox" checked={checked} onChange={() => toggle(u.id)} />
                     <UserStatusChip signedIn={u.signedIn} name={u.name} showLabel={false} />
                   </label>
-                  <UserStatusChip signedIn={u.signedIn} subject={u.name} />
+                  {u.activeJobId ? (
+                    <SignInCountdown startedAt={signInStartedAt[u.id] ?? Date.now()} />
+                  ) : (
+                    <UserStatusChip signedIn={u.signedIn} subject={u.name} />
+                  )}
                 </div>
                 <div className="org-people-email" title={u.email}>
                   {u.email}

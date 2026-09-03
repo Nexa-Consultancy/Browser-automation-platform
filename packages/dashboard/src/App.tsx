@@ -1,133 +1,105 @@
-import { useEffect, useState } from "react";
-import { JobForm } from "./components/JobForm";
-import { JobList } from "./components/JobList";
-import { JobView } from "./components/JobView";
-import { GroupList } from "./components/GroupList";
-import { UsersPanel } from "./components/UsersPanel";
-import { DashboardView } from "./components/DashboardView";
-import { OrganizationsView } from "./components/OrganizationsView";
-import { SettingsView } from "./components/SettingsView";
-import { EgressBadge } from "./components/EgressBadge";
+import { useCallback, useEffect, useState } from "react";
+import * as api from "./api";
+import type { SessionAccount } from "./types";
+import { APP_PATH, PUBLIC_PATHS, navigate, routeOf } from "./nav";
+import { Landing } from "./pages/Landing";
+import { Login } from "./pages/Login";
+import { Signup } from "./pages/Signup";
+import { ResetPassword } from "./pages/ResetPassword";
+import { AppShell } from "./AppShell";
 
-type Route =
-  | { view: "runs" }
-  | { view: "groups" }
-  | { view: "organizations" }
-  | { view: "dashboard" }
-  | { view: "settings" }
-  | { view: "job"; jobId: string };
-
-// Dashboard is the landing view: it's the one place that shows what's live
-// right now, what's coming up on the schedule, and the history underneath
-// — the first thing anyone should see, not a group's config form.
-function routeFromHash(): Route {
-  const job = location.hash.match(/^#\/job\/(.+)$/);
-  if (job) return { view: "job", jobId: job[1] };
-  if (location.hash === "#/runs") return { view: "runs" };
-  if (location.hash === "#/groups") return { view: "groups" };
-  if (location.hash === "#/organizations") return { view: "organizations" };
-  if (location.hash === "#/settings") return { view: "settings" };
-  return { view: "dashboard" };
-}
-
+/**
+ * Two layers of routing, and the split is deliberate.
+ *
+ * The PATH decides which product you are looking at: the public site (/,
+ * /login, /signup, /reset) or the dashboard (/dashboard). Inside the
+ * dashboard, the HASH keeps doing what it always did.
+ *
+ * This component owns one more thing: who is signed in. It resolves that
+ * once on load, holds it, and refuses to render the app without it — so
+ * there is exactly one place that can decide "logged in or not", rather
+ * than every view guessing from a failed request.
+ */
 export default function App() {
-  const [route, setRoute] = useState<Route>(routeFromHash());
+  const [path, setPath] = useState(routeOf());
+  const [account, setAccount] = useState<SessionAccount | null>(null);
+  // Distinct from "no account": until the session request comes back we
+  // don't know, and flashing the login page at somebody who is signed in is
+  // worse than a moment of nothing.
+  const [resolved, setResolved] = useState(false);
 
   useEffect(() => {
-    const onHashChange = () => setRoute(routeFromHash());
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
+    const onPop = () => setPath(routeOf());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  function go(hash: string) {
-    location.hash = hash;
-    setRoute(routeFromHash());
+  const loadSession = useCallback(async () => {
+    try {
+      const { account } = await api.getSession();
+      setAccount(account);
+    } catch {
+      // A network failure is not "signed out" — but there is nothing else
+      // to show, so treat it as no session and let them try to log in.
+      setAccount(null);
+    } finally {
+      setResolved(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSession();
+  }, [loadSession]);
+
+  function onSignedIn(next: SessionAccount) {
+    setAccount(next);
+    navigate(APP_PATH);
   }
 
-  function openJob(id: string) {
-    go(`#/job/${id}`);
+  async function onSignOut() {
+    await api.logout().catch(() => {});
+    setAccount(null);
+    navigate(PUBLIC_PATHS.landing);
   }
 
-  return (
-    <div>
-      <header className="app-header">
-        <div className="brand" onClick={() => go("")}>
-          <span className="mark" />
-          <h1>Browser Automation</h1>
-        </div>
-        <nav className="app-tabs">
-          <button
-            className={route.view === "dashboard" ? "active" : ""}
-            onClick={() => go("")}
-          >
-            Dashboard
-          </button>
-          <button
-            className={route.view === "organizations" ? "active" : ""}
-            onClick={() => go("#/organizations")}
-          >
-            Organizations
-          </button>
-          <button
-            className={route.view === "groups" ? "active" : ""}
-            onClick={() => go("#/groups")}
-          >
-            Groups
-          </button>
-          <button
-            className={route.view === "runs" ? "active" : ""}
-            onClick={() => go("#/runs")}
-          >
-            Custom run
-          </button>
-          <button
-            className={route.view === "settings" ? "active" : ""}
-            onClick={() => go("#/settings")}
-          >
-            Settings
-          </button>
-        </nav>
-        <EgressBadge />
-      </header>
+  if (!resolved) {
+    return (
+      <div className="boot-screen">
+        <span className="mark" />
+        <span>Loading…</span>
+      </div>
+    );
+  }
 
-      {route.view === "job" ? (
-        <JobView jobId={route.jobId} onBack={() => go("")} />
-      ) : route.view === "settings" ? (
-        <div className="container">
-          <SettingsView />
-        </div>
-      ) : route.view === "dashboard" ? (
-        <div className="container">
-          <DashboardView onOpenJob={openJob} />
-        </div>
-      ) : route.view === "organizations" ? (
-        <div className="container">
-          <OrganizationsView onOpenJob={openJob} />
-        </div>
-      ) : route.view === "runs" ? (
-        <div className="container">
-          <div className="job-toolbar">
-            <div className="job-toolbar-title">
-              <h2>Custom run</h2>
-              <span className="hint">
-                A one-off automation that starts straight away and isn't saved. For anything recurring, make a
-                group.
-              </span>
-            </div>
-          </div>
-          <JobForm onCreated={openJob} />
-          <div style={{ marginTop: 24 }}>
-            <JobList onSelect={openJob} />
-          </div>
-        </div>
-      ) : (
-        <div className="container">
-          <div className="groups-page-grid">
-            <GroupList onOpenJob={openJob} />
-            <UsersPanel onOpenJob={openJob} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  switch (path) {
+    case "landing":
+      return <Landing signedIn={!!account} />;
+
+    case "signup":
+      // Already signed in? The signup form is meaningless — go to the app.
+      if (account) {
+        navigate(APP_PATH, true);
+        return null;
+      }
+      return <Signup />;
+
+    case "login":
+      if (account) {
+        navigate(APP_PATH, true);
+        return null;
+      }
+      return <Login onSignedIn={onSignedIn} />;
+
+    case "reset":
+      // Reachable while signed in — someone can follow a reset link from an
+      // email in the same browser — so this one is not redirected away.
+      return <ResetPassword />;
+
+    case "app":
+      if (!account) {
+        navigate(PUBLIC_PATHS.login, true);
+        return null;
+      }
+      return <AppShell account={account} onSignOut={onSignOut} onSessionLost={() => setAccount(null)} />;
+  }
 }

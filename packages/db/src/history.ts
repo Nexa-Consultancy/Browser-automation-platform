@@ -25,7 +25,7 @@ interface HistoryDbRow {
  * counting in Node: a busy day is hundreds of sessions, and the History view
  * only ever shows the totals.
  */
-export async function listRunHistory(limit = 200): Promise<RunHistoryRow[]> {
+export async function listRunHistory(accountId: string, limit = 200): Promise<RunHistoryRow[]> {
   const { rows } = await pool.query<HistoryDbRow>(
     `SELECT j.id, j.name, j.target_url, j.status, j.group_id, j.created_at,
             g.name AS group_name,
@@ -40,10 +40,11 @@ export async function listRunHistory(limit = 200): Promise<RunHistoryRow[]> {
        FROM jobs j
        LEFT JOIN sessions s ON s.job_id = j.id
        LEFT JOIN groups   g ON g.id     = j.group_id
+      WHERE j.account_id = $2
       GROUP BY j.id, g.name
       ORDER BY j.created_at DESC
       LIMIT $1`,
-    [limit],
+    [limit, accountId],
   );
 
   return rows.map((r) => ({
