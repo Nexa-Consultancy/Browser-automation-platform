@@ -36,9 +36,25 @@ async function main() {
 
   const app = Fastify({ logger: true });
 
-  // credentials: the dashboard sends its session cookie, which a bare
-  // `origin: true` would not allow on a cross-origin dev setup.
-  await app.register(cors, { origin: true, credentials: true });
+  // The dashboard never actually makes a cross-origin request — in prod
+  // nginx serves it from the same origin as the api, and in dev Vite's own
+  // proxy (see packages/dashboard/vite.config.ts) forwards /api and /ws
+  // server-side, so the browser only ever talks to its own origin. That
+  // means `origin: true` (reflect whatever Origin the request sent) bought
+  // nothing functionally, while combined with `credentials: true` it let
+  // ANY website make cookie-bearing requests here on a signed-in visitor's
+  // behalf — this app didn't have cookie sessions when that was written.
+  // An explicit allowlist keeps same-origin traffic working (which needs
+  // no CORS headers at all) and closes that off.
+  const allowedOrigins = [
+    process.env.PUBLIC_BASE_URL?.trim(),
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ].filter((o): o is string => Boolean(o));
+  await app.register(cors, {
+    origin: (origin, cb) => cb(null, !origin || allowedOrigins.includes(origin)),
+    credentials: true,
+  });
   await app.register(cookie);
   await app.register(multipart);
   await app.register(websocketPlugin);

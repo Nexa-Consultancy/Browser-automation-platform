@@ -1,4 +1,3 @@
-import type { FastifyRequest } from "fastify";
 import { getSettings, type Account } from "@automation/db";
 import { buildTransport, smtpConfigured } from "../alerts.js";
 import { RESET_TTL_MINUTES } from "./tokens.js";
@@ -6,18 +5,18 @@ import { RESET_TTL_MINUTES } from "./tokens.js";
 /**
  * Where the reset link should point.
  *
- * PUBLIC_BASE_URL is the reliable answer and should be set in production.
- * Falling back to the request's own headers keeps development working with
- * no configuration; behind a proxy that means trusting x-forwarded-*, which
- * is fine for building a link but is why the env var exists.
+ * PUBLIC_BASE_URL only — never a request header. x-forwarded-host/Host are
+ * attacker-controlled: a forged Host on the reset request would otherwise
+ * land straight in the emailed link, sending the reset token to whatever
+ * domain the attacker put there the moment the victim clicks it. Refusing
+ * to send without a configured base URL is safer than guessing one.
  */
-function baseUrl(req: FastifyRequest): string {
+function baseUrl(): string {
   const configured = process.env.PUBLIC_BASE_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-
-  const proto = String(req.headers["x-forwarded-proto"] ?? req.protocol ?? "http").split(",")[0].trim();
-  const host = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost").split(",")[0].trim();
-  return `${proto}://${host}`;
+  if (!configured) {
+    throw new Error("PUBLIC_BASE_URL is not set — cannot build a safe password-reset link.");
+  }
+  return configured.replace(/\/+$/, "");
 }
 
 function escapeHtml(s: string): string {
@@ -33,13 +32,13 @@ function escapeHtml(s: string): string {
  * server log, where someone can see that resets are silently not being
  * delivered.
  */
-export async function sendPasswordReset(account: Account, token: string, req: FastifyRequest): Promise<void> {
+export async function sendPasswordReset(account: Account, token: string): Promise<void> {
   const settings = await getSettings();
   if (!settings.SMTP_HOST || !settings.SMTP_FROM) {
     throw new Error("SMTP is not configured — cannot send a password reset. Set it under Settings → Integrations.");
   }
 
-  const link = `${baseUrl(req)}/reset?token=${encodeURIComponent(token)}`;
+  const link = `${baseUrl()}/reset?token=${encodeURIComponent(token)}`;
   const transport = buildTransport(settings);
 
   await transport.sendMail({

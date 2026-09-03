@@ -192,7 +192,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     });
 
     try {
-      await sendPasswordReset(account, token, req);
+      await sendPasswordReset(account, token);
     } catch (err) {
       // A mail failure must not become a signal about the address either,
       // so it is logged server-side and the caller still sees the same
