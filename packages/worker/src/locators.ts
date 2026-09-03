@@ -17,6 +17,14 @@ function looksLikeSelector(target: string): boolean {
 async function firstMatching(candidates: Locator[]): Promise<Locator | null> {
   for (const loc of candidates) {
     try {
+      // Prefer an actually-visible match: a strategy like getByPlaceholder
+      // can match a hidden duplicate (e.g. a measurement clone some custom
+      // inputs render) ahead of the real, visible field in DOM order — a
+      // plain .first() would silently pick that hidden node, and fill()
+      // would fail on it, which fill_if_visible then swallows as "not
+      // present." Falls back to any match if none happen to be visible.
+      const visible = loc.locator(":visible");
+      if ((await visible.count()) > 0) return visible.first();
       if ((await loc.count()) > 0) return loc.first();
     } catch {
       // an invalid selector string throws on .count(); just try the next strategy
