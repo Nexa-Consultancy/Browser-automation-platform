@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OrganizationWithCounts, PlatformUser } from "../types";
 import * as api from "../api";
+import { PasswordInput } from "./PasswordInput";
 
 /**
  * Add *and* edit a reusable user — one form, same as GroupModal. On create
@@ -160,10 +161,9 @@ export function AddUserModal({
             </div>
             <div className="form-row">
               <label>Password</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder={editing ? "•••••••• (leave blank to keep unchanged)" : ""}
               />
               <div className="hint">

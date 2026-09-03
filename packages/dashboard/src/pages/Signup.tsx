@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as api from "../api";
 import { PUBLIC_PATHS, navigate } from "../nav";
 import { AuthShell } from "./AuthShell";
+import { PasswordInput } from "../components/PasswordInput";
 
 /**
  * Public signup. Every field here is asked for a reason: the answers are
@@ -144,25 +145,23 @@ export function Signup() {
         <div className="form-two-col">
           <div className="form-row">
             <label htmlFor="su-password">Password</label>
-            <input
+            <PasswordInput
               id="su-password"
-              type="password"
               required
               autoComplete="new-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
             />
             <div className="hint">At least 8 characters, with a letter and a number.</div>
           </div>
           <div className="form-row">
             <label htmlFor="su-confirm">Confirm password</label>
-            <input
+            <PasswordInput
               id="su-confirm"
-              type="password"
               required
               autoComplete="new-password"
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={setConfirm}
             />
           </div>
         </div>

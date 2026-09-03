@@ -3,6 +3,7 @@ import * as api from "../api";
 import { TemplatesSettings } from "./TemplatesSettings";
 import { AccountsSettings } from "./AccountsSettings";
 import type { SessionAccount } from "../types";
+import { setDeveloperView, useDeveloperView } from "../developerView";
 
 type Settings = Record<string, string>;
 
@@ -31,6 +32,7 @@ function Field({
 type Tab = "templates" | "accounts" | "integrations" | "advanced";
 
 export function SettingsView({ account }: { account: SessionAccount }) {
+  const developerView = useDeveloperView();
   const [tab, setTab] = useState<Tab>("templates");
   const [s, setS] = useState<Settings>({});
   const [loaded, setLoaded] = useState(false);
@@ -418,6 +420,35 @@ export function SettingsView({ account }: { account: SessionAccount }) {
 
           {tab === "advanced" && (
             <div className="settings-grid">
+              {/* ---------- what the dashboard shows ---------- */}
+        <div className="card form-grid">
+          <div className="form-section">
+            <div className="eyebrow">Dashboard</div>
+            <label className="switch-row">
+              <input
+                type="checkbox"
+                checked={developerView}
+                onChange={(e) => setDeveloperView(e.target.checked)}
+              />
+              <span className="switch-track" aria-hidden="true">
+                <span className="switch-knob" />
+              </span>
+              <span className="switch-text">
+                <strong>Developer view</strong>
+                <span className="hint">
+                  {developerView
+                    ? "The dashboard also shows the live-run controls and the full run log — useful when something needs diagnosing."
+                    : "Off: the dashboard shows organizations, groups, people, failures and what is scheduled. Turn this on to add the live-run controls and the run log underneath."}
+                </span>
+              </span>
+            </label>
+            <div className="hint" style={{ marginTop: 10 }}>
+              Remembered in this browser only, so turning it on to debug something does not change what anyone
+              else sees.
+            </div>
+          </div>
+        </div>
+
               {/* ---------- network egress ---------- */}
         <div className="card form-grid">
           <div className="form-section">

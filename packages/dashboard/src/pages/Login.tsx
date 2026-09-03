@@ -3,6 +3,7 @@ import * as api from "../api";
 import type { SessionAccount } from "../types";
 import { PUBLIC_PATHS, navigate } from "../nav";
 import { AuthShell } from "./AuthShell";
+import { PasswordInput } from "../components/PasswordInput";
 
 /**
  * Sign in, and — because people forget — request a reset without leaving
@@ -117,13 +118,12 @@ export function Login({ onSignedIn }: { onSignedIn: (account: SessionAccount) =>
         </div>
         <div className="form-row">
           <label htmlFor="login-password">Password</label>
-          <input
+          <PasswordInput
             id="login-password"
-            type="password"
             required
             autoComplete="current-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={setPassword}
           />
         </div>
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as api from "../api";
 import { PUBLIC_PATHS, navigate } from "../nav";
 import { AuthShell } from "./AuthShell";
+import { PasswordInput } from "../components/PasswordInput";
 
 /** Where the emailed link lands. The token rides in the query string
  * because the link has to work in a mail client with no JavaScript. */
@@ -72,26 +73,24 @@ export function ResetPassword() {
       <form className="auth-form" onSubmit={submit}>
         <div className="form-row">
           <label htmlFor="rp-password">New password</label>
-          <input
+          <PasswordInput
             id="rp-password"
-            type="password"
             required
             autoFocus
             autoComplete="new-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={setPassword}
           />
           <div className="hint">At least 8 characters, with a letter and a number.</div>
         </div>
         <div className="form-row">
           <label htmlFor="rp-confirm">Confirm new password</label>
-          <input
+          <PasswordInput
             id="rp-confirm"
-            type="password"
             required
             autoComplete="new-password"
             value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
+            onChange={setConfirm}
           />
         </div>
         <button className="primary big" type="submit" disabled={busy}>
