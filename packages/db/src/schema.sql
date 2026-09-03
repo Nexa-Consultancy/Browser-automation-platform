@@ -350,3 +350,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_name_per_account
 DROP INDEX IF EXISTS idx_step_templates_default_for;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_step_templates_default_per_account
   ON step_templates (account_id, default_for) WHERE default_for IS NOT NULL;
+
+-- Repairs runs launched by "Join now" before that path passed an account.
+-- They were written with account_id NULL, which made every account-scoped
+-- read of them fail — the live view in particular, whose WebSocket checks
+-- ownership before it will stream anything. A group already knows which
+-- workspace it belongs to, so the run can be handed back to it exactly.
+UPDATE jobs j
+   SET account_id = g.account_id
+  FROM groups g
+ WHERE j.group_id = g.id
+   AND j.account_id IS NULL
+   AND g.account_id IS NOT NULL;

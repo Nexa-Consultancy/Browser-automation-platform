@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { getJob, listJobs, listSessionsByJob } from "@automation/db";
+import { getJob, jobBelongsToAccount, listJobs, listSessionsByJob } from "@automation/db";
 import { parseUserCsv, buildDefaultUsers, buildNamedUsers } from "@automation/shared";
 import { publishControl } from "../pubsub.js";
 import { launchJob, linesOf, normalizeSteps, stopJob } from "../services/launch.js";
@@ -72,6 +72,11 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/api/jobs/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    // Scoped: a run's sessions carry user names and the pages they visited,
+    // so knowing an id must not be enough to read somebody else's.
+    if (!(await jobBelongsToAccount(id, accountId(req)))) {
+      return reply.code(404).send({ error: "not found" });
+    }
     const job = await getJob(id);
     if (!job) return reply.code(404).send({ error: "not found" });
     const sessions = await listSessionsByJob(id);
@@ -84,6 +89,9 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   // relaunching it inside the same window).
   app.post("/api/jobs/:id/stop-all", async (req, reply) => {
     const { id } = req.params as { id: string };
+    if (!(await jobBelongsToAccount(id, accountId(req)))) {
+      return reply.code(404).send({ error: "not found" });
+    }
     const stopped = await stopJob(id);
     reply.send({ ok: true, stopped });
   });
@@ -91,6 +99,9 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   // Second-prompt follow-up steps applied to every session in the job.
   app.post("/api/jobs/:id/steps", async (req, reply) => {
     const { id } = req.params as { id: string };
+    if (!(await jobBelongsToAccount(id, accountId(req)))) {
+      return reply.code(404).send({ error: "not found" });
+    }
     const body = req.body as { steps: string };
     const steps = linesOf(body?.steps);
     if (steps.length === 0) return reply.code(400).send({ error: "no steps provided" });

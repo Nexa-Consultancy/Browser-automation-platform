@@ -340,6 +340,11 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
       steps: group.steps,
       users: [...buildNamedUsers(group.userNames), ...buildLinkedUsers(linked)],
       groupId: group.id,
+      // Without this the run is created owned by nobody, and every
+      // account-scoped read of it then fails — including the WebSocket's
+      // ownership check, which is what makes the live view sit there
+      // loading forever while the run itself is happily going.
+      accountId: account,
     });
     const claimed = await setGroupActiveJob(group.id, job.id);
     if (!claimed) {

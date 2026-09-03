@@ -35,7 +35,7 @@ function isAllowedOrigin(origin: string | undefined, host: string | undefined): 
  * other direction over the same socket for minimum latency.
  */
 export async function registerWs(app: FastifyInstance): Promise<void> {
-  app.get("/ws", { websocket: true }, async (socket, request) => {
+  app.get("/ws", { websocket: true }, (socket, request) => {
     if (!isAllowedOrigin(request.headers.origin, request.headers.host)) {
       socket.close(1008, "origin not allowed");
       return;
@@ -45,11 +45,18 @@ export async function registerWs(app: FastifyInstance): Promise<void> {
     // same session cookie the REST API uses, and a connection that cannot
     // name a signed-in account is closed before it can subscribe to
     // anything.
-    const account = await accountFromRequest(request);
-    if (!account) {
-      socket.close(1008, "not signed in");
-      return;
-    }
+    //
+    // Started here but NOT awaited here, and this matters: the dashboard
+    // sends its "subscribe" the instant the socket opens. Awaiting before
+    // the message listener is attached means that first frame arrives with
+    // nobody listening and is silently dropped — the live view then waits
+    // forever for a stream it never asked for. Attaching the listener
+    // synchronously and awaiting this promise inside it keeps the check
+    // without the race.
+    const accountReady = accountFromRequest(request).then((account) => {
+      if (!account) socket.close(1008, "not signed in");
+      return account;
+    });
 
     const sub = newRedisConnection();
     const pub = newRedisConnection();
@@ -65,6 +72,11 @@ export async function registerWs(app: FastifyInstance): Promise<void> {
     });
 
     socket.on("message", async (raw: Buffer) => {
+      // Every message waits on the same one-shot auth promise, so a frame
+      // that beat the lookup is handled rather than lost.
+      const account = await accountReady;
+      if (!account) return;
+
       let msg: any;
       try {
         msg = JSON.parse(raw.toString());
