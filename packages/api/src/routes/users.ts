@@ -1,8 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import {
+  DuplicateUserEmail,
+  addUserToGroup,
   createUser,
   deleteUser,
+  getGroup,
   getJob,
+  getOrganization,
   getTemplate,
   getUser,
   getUserPasswordPlain,
@@ -71,6 +75,11 @@ async function launchLoginCapture(user: { id: string; name: string; email: strin
   return job.id;
 }
 
+/** null (Unassigned) is always fine; a named organization has to exist. */
+async function organizationMissing(organizationId: string | null): Promise<boolean> {
+  return organizationId !== null && !(await getOrganization(organizationId));
+}
+
 export async function userRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/users", async () => {
     const users = await listUsers();
@@ -79,6 +88,7 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         id: u.id,
         name: u.name,
         email: u.email,
+        organizationId: u.organizationId,
         signedIn: userLoginExists(u.id),
         activeJobId: await releaseIfFinished(u),
         createdAt: u.createdAt,
@@ -87,15 +97,46 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     return { users: out };
   });
 
+  /**
+   * `groupId` is what makes "add someone to the IT department" one action
+   * rather than two: the new user is created, filed under the organization,
+   * and linked straight into that group's roster.
+   */
   app.post("/api/users", async (req, reply) => {
-    const { name, email, password } = (req.body ?? {}) as { name?: string; email?: string; password?: string };
+    const { name, email, password, organizationId, groupId } = (req.body ?? {}) as {
+      name?: string;
+      email?: string;
+      password?: string;
+      organizationId?: string | null;
+      groupId?: string | null;
+    };
     if (!name?.trim() || !email?.trim() || !password) {
       return reply.code(400).send({ error: "name, email and password are required" });
     }
 
-    const user = await createUser({ name: name.trim(), email: email.trim(), password });
+    const orgId = organizationId?.trim() || null;
+    if (await organizationMissing(orgId)) {
+      return reply.code(400).send({ error: "that organization no longer exists" });
+    }
+    const linkGroupId = groupId?.trim() || null;
+    if (linkGroupId && !(await getGroup(linkGroupId))) {
+      return reply.code(400).send({ error: "that group no longer exists" });
+    }
+
+    let user;
+    try {
+      user = await createUser({ name: name.trim(), email: email.trim(), password, organizationId: orgId });
+    } catch (err) {
+      if (err instanceof DuplicateUserEmail) return reply.code(409).send({ error: err.message });
+      throw err;
+    }
+    if (linkGroupId) await addUserToGroup(linkGroupId, user.id);
+
     const jobId = await launchLoginCapture(user, password);
-    reply.code(201).send({ user: { id: user.id, name: user.name, email: user.email, signedIn: false }, jobId });
+    reply.code(201).send({
+      user: { id: user.id, name: user.name, email: user.email, organizationId: user.organizationId, signedIn: false },
+      jobId,
+    });
   });
 
   /** Update name/email, and optionally rotate the stored password — same
@@ -109,15 +150,46 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(409).send({ error: "a sign-in run is already in progress for this user" });
     }
 
-    const { name, email, password } = (req.body ?? {}) as { name?: string; email?: string; password?: string };
+    const { name, email, password, organizationId } = (req.body ?? {}) as {
+      name?: string;
+      email?: string;
+      password?: string;
+      organizationId?: string | null;
+    };
     if (!name?.trim() || !email?.trim()) return reply.code(400).send({ error: "name and email are required" });
 
-    const user = await updateUser(id, { name: name.trim(), email: email.trim(), password: password || undefined });
+    // Absent means "leave where they are"; an explicit "" means Unassigned.
+    const orgId = organizationId === undefined ? existing.organizationId : organizationId?.trim() || null;
+    if (await organizationMissing(orgId)) {
+      return reply.code(400).send({ error: "that organization no longer exists" });
+    }
+
+    let user;
+    try {
+      user = await updateUser(id, {
+        name: name.trim(),
+        email: email.trim(),
+        password: password || undefined,
+        organizationId: orgId,
+      });
+    } catch (err) {
+      if (err instanceof DuplicateUserEmail) return reply.code(409).send({ error: err.message });
+      throw err;
+    }
     if (!user) return reply.code(404).send({ error: "not found" });
 
     let jobId: string | null = null;
     if (password) jobId = await launchLoginCapture(user, password);
-    reply.send({ user: { id: user.id, name: user.name, email: user.email, signedIn: userLoginExists(user.id) }, jobId });
+    reply.send({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        organizationId: user.organizationId,
+        signedIn: userLoginExists(user.id),
+      },
+      jobId,
+    });
   });
 
   /** Re-run the sign-in flow with the already-stored password — for a

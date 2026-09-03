@@ -89,6 +89,9 @@ export interface PlatformUser {
   id: string;
   name: string;
   email: string;
+  /** The organization this person belongs to, or null when they were
+   * created before organizations existed (shown as "Unassigned"). */
+  organizationId: string | null;
   /** Whether a Chromium profile has been captured for this user yet. */
   signedIn: boolean;
   /** The login-capture job currently running for this user, if any. */
@@ -106,6 +109,9 @@ export interface PlatformUser {
 export interface Group {
   id: string;
   name: string;
+  /** The organization this group is a department of, or null when it has
+   * never been filed under one (shown as "Unassigned"). */
+  organizationId: string | null;
   targetUrl: string;
   steps: string[]; // same plain-English step language as a manual job
   userNames: string[]; // one entry per user; length IS the user count
@@ -188,4 +194,25 @@ export interface DailyReport {
   completed: number;
   failed: number;
   stopped: number;
+}
+
+/**
+ * The top of the company → department → people hierarchy: an organization
+ * owns groups (its departments/teams) and users (its people). Both links
+ * are optional — groups and users predate organizations, and one that has
+ * never been filed under an organization is shown as "Unassigned" rather
+ * than hidden.
+ */
+export interface Organization {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+}
+
+/** An organization plus the roll-up the Organizations rail shows without
+ * having to load every group and user first. */
+export interface OrganizationWithCounts extends Organization {
+  groupCount: number;
+  userCount: number;
 }

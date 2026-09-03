@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PlatformUser } from "../types";
+import type { OrganizationWithCounts, PlatformUser } from "../types";
 import * as api from "../api";
 
 /**
@@ -7,13 +7,24 @@ import * as api from "../api";
  * (and on edit when a new password is typed) this launches a live sign-in
  * run: the server auto-fills email/password, then stops for "Stay signed
  * in?"/2FA to be finished by hand in the live view that opens next.
+ *
+ * Opened from inside a department (`groupId`), it also puts the new person
+ * straight into that department, so "add someone to IT" is one action.
  */
 export function AddUserModal({
   user,
+  defaultOrganizationId = null,
+  groupId = null,
+  groupName = null,
   onClose,
   onSaved,
 }: {
   user?: PlatformUser;
+  /** Preselects the organization when adding from inside one. */
+  defaultOrganizationId?: string | null;
+  /** When set, the new user is linked into this group on save. */
+  groupId?: string | null;
+  groupName?: string | null;
   onClose: () => void;
   onSaved: (jobId: string | null) => void;
 }) {
@@ -21,6 +32,8 @@ export function AddUserModal({
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
   const [password, setPassword] = useState("");
+  const [organizationId, setOrganizationId] = useState<string>(user?.organizationId ?? defaultOrganizationId ?? "");
+  const [organizations, setOrganizations] = useState<OrganizationWithCounts[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -32,10 +45,16 @@ export function AddUserModal({
   }, [dirty, onClose]);
 
   useEffect(() => {
+    void api.listOrganizations().then((r) => setOrganizations(r.organizations)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const el = document.activeElement;
-      if (el instanceof HTMLInputElement) return;
+      // Escape inside a field belongs to the field (it dismisses a native
+      // <select> dropdown), not to the dialog — same reasoning as GroupModal.
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) return;
       requestClose();
     };
     window.addEventListener("keydown", onKey);
@@ -53,10 +72,21 @@ export function AddUserModal({
     setSubmitting(true);
     try {
       if (editing) {
-        const res = await api.updateUser(user!.id, { name, email, password: password || undefined });
+        const res = await api.updateUser(user!.id, {
+          name,
+          email,
+          password: password || undefined,
+          organizationId: organizationId || null,
+        });
         onSaved(res.jobId);
       } else {
-        const res = await api.createUser({ name, email, password });
+        const res = await api.createUser({
+          name,
+          email,
+          password,
+          organizationId: organizationId || null,
+          groupId,
+        });
         onSaved(res.jobId);
       }
     } catch (err) {
@@ -79,7 +109,7 @@ export function AddUserModal({
     >
       <div className="modal-panel modal-form" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{editing ? `Edit ${user!.name}` : "Add user"}</span>
+          <span>{editing ? `Edit ${user!.name}` : groupName ? `Add a person to ${groupName}` : "Add user"}</span>
           <button type="button" onClick={requestClose}>
             ✕
           </button>
@@ -110,6 +140,22 @@ export function AddUserModal({
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="ray@company.com"
                 />
+              </div>
+            </div>
+            <div className="form-row" style={{ maxWidth: 320 }}>
+              <label>Organization</label>
+              <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>
+                <option value="">Unassigned</option>
+                {organizations.map((o) => (
+                  <option value={o.id} key={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+              <div className="hint">
+                {groupName
+                  ? `Saving also puts them straight into ${groupName}.`
+                  : "Which company or client this person belongs to."}
               </div>
             </div>
             <div className="form-row">

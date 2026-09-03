@@ -5,12 +5,14 @@ import { JobView } from "./components/JobView";
 import { GroupList } from "./components/GroupList";
 import { UsersPanel } from "./components/UsersPanel";
 import { DashboardView } from "./components/DashboardView";
+import { OrganizationsView } from "./components/OrganizationsView";
 import { SettingsView } from "./components/SettingsView";
 import { EgressBadge } from "./components/EgressBadge";
 
 type Route =
   | { view: "runs" }
   | { view: "groups" }
+  | { view: "organizations" }
   | { view: "dashboard" }
   | { view: "settings" }
   | { view: "job"; jobId: string };
@@ -23,6 +25,7 @@ function routeFromHash(): Route {
   if (job) return { view: "job", jobId: job[1] };
   if (location.hash === "#/runs") return { view: "runs" };
   if (location.hash === "#/groups") return { view: "groups" };
+  if (location.hash === "#/organizations") return { view: "organizations" };
   if (location.hash === "#/settings") return { view: "settings" };
   return { view: "dashboard" };
 }
@@ -60,6 +63,12 @@ export default function App() {
             Dashboard
           </button>
           <button
+            className={route.view === "organizations" ? "active" : ""}
+            onClick={() => go("#/organizations")}
+          >
+            Organizations
+          </button>
+          <button
             className={route.view === "groups" ? "active" : ""}
             onClick={() => go("#/groups")}
           >
@@ -90,6 +99,10 @@ export default function App() {
       ) : route.view === "dashboard" ? (
         <div className="container">
           <DashboardView onOpenJob={openJob} />
+        </div>
+      ) : route.view === "organizations" ? (
+        <div className="container">
+          <OrganizationsView onOpenJob={openJob} />
         </div>
       ) : route.view === "runs" ? (
         <div className="container">

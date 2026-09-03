@@ -4,6 +4,7 @@ export interface UserRecord {
   id: string;
   name: string;
   email: string;
+  organizationId: string | null;
   activeJobId: string | null;
   createdAt: string;
 }
@@ -12,6 +13,7 @@ interface UserDbRow {
   id: string;
   name: string;
   email: string;
+  organization_id: string | null;
   active_job_id: string | null;
   created_at: Date;
 }
@@ -21,6 +23,7 @@ function toUser(r: UserDbRow): UserRecord {
     id: r.id,
     name: r.name,
     email: r.email,
+    organizationId: r.organization_id,
     activeJobId: r.active_job_id,
     createdAt: r.created_at.toISOString(),
   };
@@ -35,16 +38,51 @@ function encKey(): string {
 // Deliberately never SELECT * here — password_enc must only ever be read by
 // getUserPasswordPlain below, so every other query lists columns explicitly
 // and simply has no way to leak ciphertext into a response.
-const COLUMNS = "id, name, email, active_job_id, created_at";
+const COLUMNS = "id, name, email, organization_id, active_job_id, created_at";
 
-export async function createUser(input: { name: string; email: string; password: string }): Promise<UserRecord> {
+export class DuplicateUserEmail extends Error {
+  constructor(email: string) {
+    super(`A user with the email ${email} already exists.`);
+    this.name = "DuplicateUserEmail";
+  }
+}
+
+const UNIQUE_VIOLATION = "23505";
+
+function rethrowDuplicate(err: unknown, email: string): never {
+  if (typeof err === "object" && err !== null && (err as { code?: string }).code === UNIQUE_VIOLATION) {
+    throw new DuplicateUserEmail(email);
+  }
+  throw err;
+}
+
+export async function createUser(input: {
+  name: string;
+  email: string;
+  password: string;
+  organizationId: string | null;
+}): Promise<UserRecord> {
+  try {
+    const { rows } = await pool.query<UserDbRow>(
+      `INSERT INTO users (name, email, password_enc, organization_id)
+       VALUES ($1, $2, pgp_sym_encrypt($3, $4), $5)
+       RETURNING ${COLUMNS}`,
+      [input.name, input.email, input.password, encKey(), input.organizationId],
+    );
+    return toUser(rows[0]);
+  } catch (err) {
+    rethrowDuplicate(err, input.email);
+  }
+}
+
+/** Every user filed under one organization — the roster the Organizations
+ * tab offers when linking people into that organization's groups. */
+export async function listUsersByOrganization(organizationId: string): Promise<UserRecord[]> {
   const { rows } = await pool.query<UserDbRow>(
-    `INSERT INTO users (name, email, password_enc)
-     VALUES ($1, $2, pgp_sym_encrypt($3, $4))
-     RETURNING ${COLUMNS}`,
-    [input.name, input.email, input.password, encKey()],
+    `SELECT ${COLUMNS} FROM users WHERE organization_id = $1 ORDER BY lower(name)`,
+    [organizationId],
   );
-  return toUser(rows[0]);
+  return rows.map(toUser);
 }
 
 export async function listUsers(): Promise<UserRecord[]> {
@@ -66,18 +104,23 @@ export async function getUsersByIds(ids: string[]): Promise<UserRecord[]> {
 
 export async function updateUser(
   id: string,
-  input: { name: string; email: string; password?: string },
+  input: { name: string; email: string; password?: string; organizationId: string | null },
 ): Promise<UserRecord | null> {
-  const { rows } = input.password
-    ? await pool.query<UserDbRow>(
-        `UPDATE users SET name = $2, email = $3, password_enc = pgp_sym_encrypt($4, $5) WHERE id = $1 RETURNING ${COLUMNS}`,
-        [id, input.name, input.email, input.password, encKey()],
-      )
-    : await pool.query<UserDbRow>(
-        `UPDATE users SET name = $2, email = $3 WHERE id = $1 RETURNING ${COLUMNS}`,
-        [id, input.name, input.email],
-      );
-  return rows[0] ? toUser(rows[0]) : null;
+  try {
+    const { rows } = input.password
+      ? await pool.query<UserDbRow>(
+          `UPDATE users SET name = $2, email = $3, organization_id = $6, password_enc = pgp_sym_encrypt($4, $5)
+            WHERE id = $1 RETURNING ${COLUMNS}`,
+          [id, input.name, input.email, input.password, encKey(), input.organizationId],
+        )
+      : await pool.query<UserDbRow>(
+          `UPDATE users SET name = $2, email = $3, organization_id = $4 WHERE id = $1 RETURNING ${COLUMNS}`,
+          [id, input.name, input.email, input.organizationId],
+        );
+    return rows[0] ? toUser(rows[0]) : null;
+  } catch (err) {
+    rethrowDuplicate(err, input.email);
+  }
 }
 
 export async function deleteUser(id: string): Promise<boolean> {

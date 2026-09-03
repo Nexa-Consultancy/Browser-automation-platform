@@ -1,13 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import {
+  addUserToGroup,
   createGroup,
   deleteGroup,
   getGroup,
+  getOrganization,
   getUsersByIds,
   listGroups,
   setGroupActiveJob,
   setGroupEnabled,
   releaseGroupRun,
+  removeUserFromGroup,
   updateGroup,
 } from "@automation/db";
 import {
@@ -33,6 +36,7 @@ const MAX_USERS_PER_GROUP = 200;
 
 interface CreateGroupBody {
   name?: string;
+  organizationId?: string | null;
   targetUrl?: string;
   steps?: string;
   userNames?: string[];
@@ -72,6 +76,7 @@ async function withSchedule(group: Group): Promise<GroupWithSchedule> {
 
 interface ParsedGroup {
   name: string;
+  organizationId: string | null;
   targetUrl: string;
   steps: string[];
   userNames: string[];
@@ -137,6 +142,9 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
   return {
     value: {
       name: body.name?.trim() ?? "",
+      // "" and undefined both mean Unassigned — a <select> with no choice
+      // made posts the empty string, not null.
+      organizationId: body.organizationId?.trim() || null,
       targetUrl,
       steps,
       userNames,
@@ -149,6 +157,11 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
       enabled: body.enabled !== false,
     },
   };
+}
+
+/** null (Unassigned) is always fine; a named organization has to exist. */
+async function organizationMissing(organizationId: string | null): Promise<boolean> {
+  return organizationId !== null && !(await getOrganization(organizationId));
 }
 
 export async function groupRoutes(app: FastifyInstance): Promise<void> {
@@ -167,6 +180,9 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/groups", async (req, reply) => {
     const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
+    if (await organizationMissing(parsed.value.organizationId)) {
+      return reply.code(400).send({ error: "that organization no longer exists" });
+    }
     if ((await getUsersByIds(parsed.value.userIds)).length !== parsed.value.userIds.length) {
       return reply.code(400).send({ error: "one or more selected users no longer exist" });
     }
@@ -191,6 +207,9 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
 
     const parsed = parseGroupBody((req.body ?? {}) as CreateGroupBody);
     if ("error" in parsed) return reply.code(400).send({ error: parsed.error });
+    if (await organizationMissing(parsed.value.organizationId)) {
+      return reply.code(400).send({ error: "that organization no longer exists" });
+    }
     if ((await getUsersByIds(parsed.value.userIds)).length !== parsed.value.userIds.length) {
       return reply.code(400).send({ error: "one or more selected users no longer exist" });
     }
@@ -214,6 +233,43 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     // Turning a group off while its window is live is handled by the
     // scheduler's next tick, which stops the run it's holding open.
     return { group: await withSchedule(group) };
+  });
+
+  /**
+   * Link an existing user into this group's roster. The Organizations tab
+   * needs both halves of "who is in this department": create a new person
+   * (POST /api/users with a groupId), or move someone who already exists
+   * into it — this is that second half.
+   */
+  app.post("/api/groups/:id/users", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { userId } = (req.body ?? {}) as { userId?: string };
+    if (!userId?.trim()) return reply.code(400).send({ error: "userId is required" });
+
+    const group = await getGroup(id);
+    if (!group) return reply.code(404).send({ error: "not found" });
+    if ((await getUsersByIds([userId])).length === 0) {
+      return reply.code(400).send({ error: "that user no longer exists" });
+    }
+    if (group.userNames.length + group.userIds.length >= MAX_USERS_PER_GROUP) {
+      return reply.code(400).send({ error: `too many users (max ${MAX_USERS_PER_GROUP} per group)` });
+    }
+
+    await addUserToGroup(id, userId);
+    const updated = await getGroup(id);
+    reply.send({ group: await withSchedule(updated!) });
+  });
+
+  /** Remove one user from this group only — they keep their login and stay
+   * in every other group they belong to. */
+  app.delete("/api/groups/:id/users/:userId", async (req, reply) => {
+    const { id, userId } = req.params as { id: string; userId: string };
+    const group = await getGroup(id);
+    if (!group) return reply.code(404).send({ error: "not found" });
+
+    await removeUserFromGroup(id, userId);
+    const updated = await getGroup(id);
+    reply.send({ group: await withSchedule(updated!) });
   });
 
   // Wipe a group's saved logins/cookies. The next run for each user starts

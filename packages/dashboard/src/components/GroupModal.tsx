@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GroupWithSchedule, PlatformUser, StepTemplate } from "../types";
+import type { GroupWithSchedule, OrganizationWithCounts, PlatformUser, StepTemplate } from "../types";
 import * as api from "../api";
 
 const TASK_PLACEHOLDER = `fill Email with {{name}}@example.com
@@ -64,11 +64,15 @@ function to12Hour(hhmm: string): string {
 export function GroupModal({
   serverTimezone,
   group,
+  defaultOrganizationId = null,
   onClose,
   onSaved,
 }: {
   serverTimezone: string;
   group?: GroupWithSchedule;
+  /** Preselects the organization when creating from inside one, so a group
+   * made from the Acme pane lands in Acme without anyone picking it twice. */
+  defaultOrganizationId?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -76,6 +80,8 @@ export function GroupModal({
   const initialSteps = group ? stripAutoOpen(group.steps) : "";
 
   const [name, setName] = useState(group?.name ?? "");
+  const [organizationId, setOrganizationId] = useState<string>(group?.organizationId ?? defaultOrganizationId ?? "");
+  const [organizations, setOrganizations] = useState<OrganizationWithCounts[]>([]);
   const [targetUrl, setTargetUrl] = useState(group?.targetUrl ?? "");
   const [steps, setSteps] = useState(initialSteps);
   // A brand new group starts with an empty free-text roster (0), not a
@@ -106,6 +112,7 @@ export function GroupModal({
   useEffect(() => {
     void api.listUsers().then((r) => setAllUsers(r.users)).catch(() => {});
     void api.listTemplates().then((r) => setTemplates(r.templates)).catch(() => {});
+    void api.listOrganizations().then((r) => setOrganizations(r.organizations)).catch(() => {});
   }, []);
 
   function applyTemplate(id: string) {
@@ -186,6 +193,7 @@ export function GroupModal({
     try {
       const payload = {
         name,
+        organizationId: organizationId || null,
         targetUrl,
         steps,
         userNames: filled,
@@ -257,7 +265,7 @@ export function GroupModal({
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Evening webinar crew"
+                  placeholder="IT department"
                 />
               </div>
               <div className="form-row">
@@ -269,6 +277,21 @@ export function GroupModal({
                   onChange={(e) => setTargetUrl(e.target.value)}
                   placeholder="https://app.example.com/room/42"
                 />
+              </div>
+            </div>
+            <div className="form-row" style={{ maxWidth: 320, marginTop: 12 }}>
+              <label>Organization</label>
+              <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>
+                <option value="">Unassigned</option>
+                {organizations.map((o) => (
+                  <option value={o.id} key={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+              <div className="hint">
+                Which company or client this group is a department of. Create organizations on the Organizations
+                tab.
               </div>
             </div>
           </div>

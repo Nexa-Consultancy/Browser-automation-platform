@@ -76,6 +76,8 @@ export interface PlatformUser {
   id: string;
   name: string;
   email: string;
+  /** The organization this person belongs to; null = Unassigned. */
+  organizationId: string | null;
   signedIn: boolean;
   activeJobId: string | null;
   createdAt: string;
@@ -95,6 +97,8 @@ export interface StepTemplate {
 export interface Group {
   id: string;
   name: string;
+  /** The organization this group is a department of; null = Unassigned. */
+  organizationId: string | null;
   targetUrl: string;
   steps: string[];
   userNames: string[];
@@ -168,4 +172,20 @@ export interface DailyReport {
   completed: number;
   failed: number;
   stopped: number;
+}
+
+/** The top of the company → department → people hierarchy: an organization
+ * owns groups (its departments) and users (its people). Mirrors
+ * packages/shared/src/types.ts. */
+export interface Organization {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+}
+
+/** An organization plus the roll-up shown on the Organizations rail. */
+export interface OrganizationWithCounts extends Organization {
+  groupCount: number;
+  userCount: number;
 }

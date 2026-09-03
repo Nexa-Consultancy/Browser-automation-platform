@@ -173,3 +173,34 @@ VALUES (
   '["open https://teams.microsoft.com/", "fill \"Email, phone, or Skype\" with {{email}}", "click \"Next\"", "wait for 2 seconds", "click if visible \"Use your password\"", "wait for 1 seconds", "fill \"Password\" with {{password}}", "click \"Sign in\"", "wait for 2 seconds", "click if visible \"Yes\""]'::jsonb
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- Organizations: the top of the company → department → people hierarchy the
+-- Organizations tab is built around. A group (department) belongs to one
+-- organization; a user belongs to one organization and is linked into any
+-- number of that organization's groups.
+--
+-- Both foreign keys are nullable and SET NULL rather than CASCADE. Groups
+-- and users existed before organizations did, so "no organization" has to
+-- stay a valid state — those show up under "Unassigned" in the UI instead
+-- of disappearing. Deleting an organization that still holds anything is
+-- refused at the API layer (see packages/api/src/routes/organizations.ts);
+-- SET NULL is only the safety net behind that check.
+CREATE TABLE IF NOT EXISTS organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  -- Free-text, shown under the name on the org rail. Somewhere to put "US
+  -- east coast clients" without inventing a field per use case.
+  description TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Case-insensitive: "Acme" and "acme" as two organizations is a mistake,
+-- not a distinction, and the error is far easier to understand at creation
+-- time than a duplicated rail six months later.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_name ON organizations (lower(name));
+
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_groups_organization_id ON groups(organization_id);
+CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id);

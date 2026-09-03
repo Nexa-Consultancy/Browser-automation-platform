@@ -4,6 +4,7 @@ import multipart from "@fastify/multipart";
 import websocketPlugin from "@fastify/websocket";
 import { migrate } from "@automation/db";
 import { groupRoutes } from "./routes/groups.js";
+import { organizationRoutes } from "./routes/organizations.js";
 import { historyRoutes } from "./routes/history.js";
 import { systemRoutes } from "./routes/system.js";
 import { jobRoutes } from "./routes/jobs.js";
@@ -43,6 +44,7 @@ async function main() {
   await app.register(sessionRoutes);
   await app.register(userRoutes);
   await app.register(templateRoutes);
+  await app.register(organizationRoutes);
   await app.register(registerWs);
 
   const port = Number(process.env.API_PORT ?? 4000);

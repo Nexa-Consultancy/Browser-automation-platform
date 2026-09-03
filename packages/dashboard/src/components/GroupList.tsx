@@ -2,20 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { GroupWithSchedule } from "../types";
 import * as api from "../api";
 import { GroupModal } from "./GroupModal";
-import { relative, to12Hour } from "../format";
-
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/** "Every day" / "Mon–Fri" / "Mon, Wed, Fri" — the shortest true phrasing. */
-function describeDays(days: number[]): string {
-  const set = [...days].sort((a, b) => a - b);
-  if (set.length === 7) return "Every day";
-  if (set.length === 5 && set.join() === "1,2,3,4,5") return "Mon–Fri";
-  if (set.length === 2 && set.join() === "0,6") return "Weekends";
-  // Monday-first, matching the order the checkboxes are shown in.
-  const ordered = [1, 2, 3, 4, 5, 6, 0].filter((d) => set.includes(d));
-  return ordered.map((d) => DAY_LABELS[d]).join(", ") || "No days selected";
-}
+import { describeDays, relative, to12Hour } from "../format";
 
 export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void }) {
   const [groups, setGroups] = useState<GroupWithSchedule[]>([]);

@@ -1,4 +1,14 @@
-import type { DailyReport, GroupWithSchedule, Job, PlatformUser, RunHistoryRow, SessionRow, StepTemplate } from "./types";
+import type {
+  DailyReport,
+  GroupWithSchedule,
+  Job,
+  Organization,
+  OrganizationWithCounts,
+  PlatformUser,
+  RunHistoryRow,
+  SessionRow,
+  StepTemplate,
+} from "./types";
 
 const API_BASE = ""; // same-origin in prod (nginx proxies /api); Vite dev server proxies /api too
 
@@ -72,6 +82,8 @@ export async function appendStepsToSession(sessionId: string, steps: string): Pr
 
 export interface CreateGroupInput {
   name: string;
+  /** The organization this group is a department of; null = Unassigned. */
+  organizationId: string | null;
   targetUrl: string;
   steps: string;
   userNames: string[];
@@ -272,8 +284,16 @@ export async function listUsers(): Promise<{ users: PlatformUser[] }> {
 }
 
 /** Creates the user and launches their sign-in run; returns the job to open
- * and drive (auto-fills email/password, then waits for 2FA by hand). */
-export async function createUser(input: { name: string; email: string; password: string }): Promise<{
+ * and drive (auto-fills email/password, then waits for 2FA by hand).
+ * `groupId` files them straight into that group's roster, which is how the
+ * Organizations tab adds a person to a department in one step. */
+export async function createUser(input: {
+  name: string;
+  email: string;
+  password: string;
+  organizationId?: string | null;
+  groupId?: string | null;
+}): Promise<{
   user: PlatformUser;
   jobId: string;
 }> {
@@ -290,7 +310,7 @@ export async function createUser(input: { name: string; email: string; password:
  * when a new password is given — jobId is null when it wasn't). */
 export async function updateUser(
   id: string,
-  input: { name: string; email: string; password?: string },
+  input: { name: string; email: string; password?: string; organizationId?: string | null },
 ): Promise<{ user: PlatformUser; jobId: string | null }> {
   return json(
     await fetch(`${API_BASE}/api/users/${id}`, {
@@ -345,4 +365,58 @@ export async function updateTemplate(
 
 export async function deleteTemplate(id: string): Promise<void> {
   await json(await fetch(`${API_BASE}/api/templates/${id}`, { method: "DELETE" }));
+}
+
+// ---------- organizations (company → department → people) ----------
+
+export async function listOrganizations(): Promise<{ organizations: OrganizationWithCounts[] }> {
+  return json(await fetch(`${API_BASE}/api/organizations`));
+}
+
+export async function createOrganization(input: { name: string; description: string }): Promise<{
+  organization: Organization;
+}> {
+  return json(
+    await fetch(`${API_BASE}/api/organizations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function updateOrganization(
+  id: string,
+  input: { name: string; description: string },
+): Promise<{ organization: Organization }> {
+  return json(
+    await fetch(`${API_BASE}/api/organizations/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+/** Refused by the server while the organization still holds groups or
+ * users — the error names what's left, so show it as-is. */
+export async function deleteOrganization(id: string): Promise<void> {
+  await json(await fetch(`${API_BASE}/api/organizations/${id}`, { method: "DELETE" }));
+}
+
+/** Move someone who already exists into a group's roster. */
+export async function addUserToGroup(groupId: string, userId: string): Promise<{ group: GroupWithSchedule }> {
+  return json(
+    await fetch(`${API_BASE}/api/groups/${groupId}/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    }),
+  );
+}
+
+/** Take someone out of one group only — they keep their login and stay in
+ * every other group they belong to. */
+export async function removeUserFromGroup(groupId: string, userId: string): Promise<{ group: GroupWithSchedule }> {
+  return json(await fetch(`${API_BASE}/api/groups/${groupId}/users/${userId}`, { method: "DELETE" }));
 }

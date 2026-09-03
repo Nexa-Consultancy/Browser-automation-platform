@@ -8,3 +8,4 @@ export * from "./settings.js";
 export * from "./logs.js";
 export * from "./users.js";
 export * from "./templates.js";
+export * from "./organizations.js";

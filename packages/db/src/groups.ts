@@ -4,6 +4,7 @@ import { pool } from "./pool.js";
 interface GroupDbRow {
   id: string;
   name: string;
+  organization_id: string | null;
   target_url: string;
   steps: string[];
   user_names: string[];
@@ -26,6 +27,7 @@ function toGroup(r: GroupDbRow): Group {
   return {
     id: r.id,
     name: r.name,
+    organizationId: r.organization_id,
     targetUrl: r.target_url,
     steps: r.steps,
     userNames: r.user_names,
@@ -47,6 +49,7 @@ function toGroup(r: GroupDbRow): Group {
 
 export async function createGroup(input: {
   name: string;
+  organizationId: string | null;
   targetUrl: string;
   steps: string[];
   userNames: string[];
@@ -59,8 +62,8 @@ export async function createGroup(input: {
   enabled: boolean;
 }): Promise<Group> {
   const { rows } = await pool.query<GroupDbRow>(
-    `INSERT INTO groups (name, target_url, steps, user_names, user_ids, start_time, end_time, lead_minutes, days, timezone, enabled)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11)
+    `INSERT INTO groups (name, target_url, steps, user_names, user_ids, start_time, end_time, lead_minutes, days, timezone, enabled, organization_id)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11, $12)
      RETURNING *`,
     [
       input.name,
@@ -74,6 +77,7 @@ export async function createGroup(input: {
       JSON.stringify(input.days),
       input.timezone,
       input.enabled,
+      input.organizationId,
     ],
   );
   return toGroup(rows[0]);
@@ -92,6 +96,7 @@ export async function updateGroup(
   id: string,
   input: {
     name: string;
+    organizationId: string | null;
     targetUrl: string;
     steps: string[];
     userNames: string[];
@@ -108,7 +113,7 @@ export async function updateGroup(
     `UPDATE groups
         SET name = $2, target_url = $3, steps = $4::jsonb, user_names = $5::jsonb,
             start_time = $6, end_time = $7, days = $8::jsonb, timezone = $9, enabled = $10,
-            lead_minutes = $11, user_ids = $12::jsonb
+            lead_minutes = $11, user_ids = $12::jsonb, organization_id = $13
       WHERE id = $1
       RETURNING *`,
     [
@@ -124,6 +129,7 @@ export async function updateGroup(
       input.enabled,
       input.leadMinutes,
       JSON.stringify(input.userIds),
+      input.organizationId,
     ],
   );
   return rows[0] ? toGroup(rows[0]) : null;
@@ -213,4 +219,33 @@ export async function releaseGroupRun(
   }
   if (recordStop) sets.push("last_stopped_at = now()");
   await pool.query(`UPDATE groups SET ${sets.join(", ")} WHERE id = $1`, params);
+}
+
+/**
+ * Links an existing user into a group's roster, idempotently — creating a
+ * person from inside a department should put them in that department, and
+ * doing it twice shouldn't list them twice.
+ *
+ * The `NOT user_ids @> ...` guard does the deduping in SQL rather than
+ * read-modify-write, so two concurrent adds can't each read the same array
+ * and clobber one another.
+ */
+export async function addUserToGroup(groupId: string, userId: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE groups
+        SET user_ids = user_ids || to_jsonb($2::text)
+      WHERE id = $1 AND NOT user_ids @> to_jsonb($2::text)`,
+    [groupId, userId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Removes a user from one group's roster, leaving the user themselves and
+ * every other group they're in untouched. */
+export async function removeUserFromGroup(groupId: string, userId: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE groups SET user_ids = user_ids - $2::text WHERE id = $1 AND user_ids @> to_jsonb($2::text)`,
+    [groupId, userId],
+  );
+  return (rowCount ?? 0) > 0;
 }

@@ -862,3 +862,304 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   font-family: var(--font-mono); font-size: 12.5px; color: var(--text);
 }
 .import-login input[type="file"] { margin-top: 8px; }
+
+/* ============================================================
+   Organizations — company → department → people.
+
+   A fixed rail of organizations on the left and one organization's
+   departments on the right. Departments expand in place rather than
+   opening a dialog, so the rest of the company stays in view while
+   you work on one of them.
+   ============================================================ */
+
+.org-master-search { margin-bottom: 18px; }
+
+.org-layout {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .org-layout { grid-template-columns: 1fr; }
+}
+
+/* ---------- the organization rail ---------- */
+
+.org-rail {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 13px;
+  box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 76px;
+}
+
+@media (max-width: 900px) {
+  .org-rail { position: static; }
+}
+
+.org-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.org-rail-head .eyebrow { margin-bottom: 0; }
+
+.org-rail-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 5px; }
+
+.org-rail-item {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  text-align: left;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 7px;
+}
+.org-rail-item:hover { background: var(--panel-2); border-color: var(--line); }
+.org-rail-item.active {
+  background: rgba(29, 100, 216, 0.08);
+  border-color: rgba(29, 100, 216, 0.45);
+}
+.org-rail-item.active .org-rail-name { color: var(--live); }
+/* A search hit is marked with the same accent as "live", because here it
+   means the same kind of thing: this is where what you asked for is. */
+.org-rail-item.hit { border-color: rgba(29, 100, 216, 0.45); border-style: dashed; }
+
+.org-rail-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.org-rail-counts { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
+
+/* Create/rename inline rather than in a dialog — one field and a button
+   should not cost a modal. */
+.org-inline-form { display: grid; gap: 7px; margin-top: 11px; }
+.org-inline-form.wide { max-width: 460px; }
+.org-inline-actions { display: flex; gap: 7px; justify-content: flex-end; }
+
+.org-empty-inline {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 12px 0;
+}
+
+/* ---------- one organization's pane ---------- */
+
+.org-detail { display: grid; gap: 26px; min-width: 0; }
+
+.org-section { display: grid; gap: 14px; min-width: 0; }
+
+.org-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.org-section-identity { display: grid; gap: 3px; min-width: 0; }
+.org-section-identity h3 { margin: 0; font-size: 18px; }
+.org-section-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+
+/* ---------- a department card ---------- */
+
+.org-group-list { display: grid; gap: 11px; }
+
+.org-group-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--muted);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  overflow: hidden;
+}
+.org-group-card.state-live,
+.org-group-card.state-starting,
+.org-group-card.state-manual { border-left-color: var(--live); }
+.org-group-card.state-held { border-left-color: var(--line); background: var(--panel-2); }
+.org-group-card.expanded { border-color: rgba(29, 100, 216, 0.4); }
+
+.org-group-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 16px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.org-group-head:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
+
+.org-group-chevron { color: var(--text-faint); font-size: 11px; width: 10px; flex-shrink: 0; }
+
+.org-group-identity { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
+.org-group-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+.org-group-state {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+}
+.state-live .org-group-state,
+.state-starting .org-group-state,
+.state-manual .org-group-state {
+  color: var(--live);
+  border-color: rgba(29, 100, 216, 0.45);
+  background: rgba(29, 100, 216, 0.07);
+}
+
+.org-group-when { display: grid; gap: 2px; justify-items: end; text-align: right; flex-shrink: 0; }
+.org-group-time { font-family: var(--font-mono); font-size: 12px; color: var(--text); white-space: nowrap; }
+.org-group-days { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); white-space: nowrap; }
+
+/* The four things the card answers without being opened: who is in it,
+   where it goes, when it runs, and what it is doing right now. */
+.org-group-facts {
+  display: grid;
+  gap: 7px;
+  padding: 12px 16px 14px 37px;
+  border-top: 1px solid var(--line-soft);
+}
+.org-fact { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.org-fact-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.org-fact-value { font-size: 12.5px; min-width: 0; line-height: 1.6; }
+.org-muted { color: var(--text-faint); }
+
+.org-link {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.org-lead {
+  margin-left: 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--live);
+  border: 1px solid rgba(29, 100, 216, 0.35);
+  border-radius: 20px;
+  padding: 1px 6px;
+}
+
+/* ---------- people ---------- */
+
+.org-people-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.org-person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+.org-person-chip .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+/* Signed in means their own real login is captured — the one distinction
+   that changes what a run actually does, so it gets a signal color. */
+.org-person-chip.signed-in { border-color: rgba(6, 122, 78, 0.35); background: rgba(6, 122, 78, 0.07); }
+.org-person-chip.signed-in .dot { background: var(--success); }
+.org-person-chip.guest { border-style: dashed; color: var(--text-dim); }
+
+/* ---------- an expanded department ---------- */
+
+.org-group-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 16px 37px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--panel-2);
+}
+
+.org-roster { display: grid; gap: 7px; }
+.org-roster-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.org-roster-head .eyebrow { margin-bottom: 0; }
+
+.org-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+.org-roster-row:last-of-type { border-bottom: none; }
+.org-roster-row button { margin-left: auto; }
+
+.org-roster-add { display: grid; gap: 5px; max-width: 340px; margin-top: 6px; }
+.org-roster-add label { margin: 0; }
+
+.org-group-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+
+/* ---------- the organization's whole roster ---------- */
+
+.org-people { display: grid; gap: 10px; }
+.org-people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 9px; }
+
+.org-people-card {
+  display: grid;
+  gap: 5px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+.org-people-name { min-width: 0; }
+.org-people-email {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-people-groups { display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; }
+.org-group-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  color: var(--text-dim);
+}
+
+@media (max-width: 640px) {
+  .org-group-head { flex-wrap: wrap; }
+  .org-group-when { justify-items: start; text-align: left; width: 100%; padding-left: 21px; }
+  .org-group-facts, .org-group-body { padding-left: 16px; }
+  .org-fact { grid-template-columns: 1fr; gap: 2px; }
+  .org-section-actions { width: 100%; }
+  .org-section-actions button { flex: 1; }
+}
