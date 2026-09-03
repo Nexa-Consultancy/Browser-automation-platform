@@ -161,3 +161,74 @@ export async function getUserPasswordPlain(id: string): Promise<string | null> {
 export async function removeUserFromAllGroups(id: string): Promise<void> {
   await pool.query(`UPDATE groups SET user_ids = user_ids - $1::text WHERE user_ids @> to_jsonb($1::text)`, [id]);
 }
+
+/**
+ * Moves people into an organization in one statement — the bulk action
+ * behind the Users list's "Move" menu.
+ *
+ * Returns how many rows actually changed, so the caller can tell a real
+ * move from a no-op on ids that have since been deleted.
+ */
+export async function setUsersOrganization(ids: string[], organizationId: string | null): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await pool.query(
+    `UPDATE users SET organization_id = $2 WHERE id = ANY($1::uuid[])`,
+    [ids, organizationId],
+  );
+  return rowCount ?? 0;
+}
+
+/**
+ * Drops these people out of every group that does NOT belong to
+ * `keepOrganizationId`.
+ *
+ * This is what keeps a move honest: someone moved from Acme to Northwind
+ * must not stay on the roster of Acme's IT department, or a run would still
+ * open a browser for them under a company they've left. Groups in the
+ * destination organization (and unfiled groups, when moving to Unassigned)
+ * are left alone.
+ */
+export async function removeUsersFromForeignGroups(
+  ids: string[],
+  keepOrganizationId: string | null,
+): Promise<void> {
+  if (ids.length === 0) return;
+  // Rebuilds each roster as "the elements that aren't in this id list".
+  // jsonb's `-` operator only removes one element per call, so filtering the
+  // array once handles any number of users in a single statement; `?|` picks
+  // out just the groups that actually hold one of them.
+  await pool.query(
+    `UPDATE groups
+        SET user_ids = (
+              SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+                FROM jsonb_array_elements_text(user_ids) AS elem
+               WHERE elem <> ALL($1::text[])
+            )
+      WHERE user_ids ?| $1::text[]
+        AND organization_id IS DISTINCT FROM $2`,
+    [ids, keepOrganizationId],
+  );
+}
+
+/** Bulk delete. Returns how many rows were actually removed. */
+export async function deleteUsers(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { rowCount } = await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [ids]);
+  return rowCount ?? 0;
+}
+
+/** Drops every one of these ids out of every group's roster — used before
+ * deleting people, so no group is left pointing at someone gone. */
+export async function removeUsersFromAllGroups(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await pool.query(
+    `UPDATE groups
+        SET user_ids = (
+              SELECT COALESCE(jsonb_agg(elem), '[]'::jsonb)
+                FROM jsonb_array_elements_text(user_ids) AS elem
+               WHERE elem <> ALL($1::text[])
+            )
+      WHERE user_ids ?| $1::text[]`,
+    [ids],
+  );
+}

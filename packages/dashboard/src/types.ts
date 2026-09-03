@@ -83,12 +83,18 @@ export interface PlatformUser {
   createdAt: string;
 }
 
+/** The two creation flows a template can be the default for. */
+export type TemplateScope = "group" | "user";
+
 /** A reusable step script, picked from a list when creating/editing a group
  * instead of retyping the same Task every time. */
 export interface StepTemplate {
   id: string;
   name: string;
   steps: string[];
+  /** "group" = prefills a new group's Task, "user" = the script that runs to
+   * capture a new user's sign-in. At most one template holds each. */
+  defaultFor: TemplateScope | null;
   createdAt: string;
 }
 

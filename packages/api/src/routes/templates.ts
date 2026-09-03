@@ -1,5 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { createTemplate, deleteTemplate, listTemplates, updateTemplate } from "@automation/db";
+import {
+  createTemplate,
+  deleteTemplate,
+  isTemplateScope,
+  listTemplates,
+  setDefaultTemplate,
+  updateTemplate,
+} from "@automation/db";
 import { linesOf } from "../services/launch.js";
 
 interface TemplateBody {
@@ -37,8 +44,32 @@ export async function templateRoutes(app: FastifyInstance): Promise<void> {
     reply.send({ template });
   });
 
+  /**
+   * Points a scope's default at one template, or clears it with a null
+   * templateId. Addressed by scope rather than by template id because that
+   * is the thing being set — there is exactly one default per scope, and
+   * naming it that way makes "move the default" a single call instead of a
+   * clear-then-set the client could half-finish.
+   *
+   * Registered before DELETE /api/templates/:id purely for readability;
+   * Fastify routes on the full path, so the two never overlap.
+   */
+  app.put("/api/templates/default", async (req, reply) => {
+    const { scope, templateId } = (req.body ?? {}) as { scope?: string; templateId?: string | null };
+    if (!isTemplateScope(scope)) {
+      return reply.code(400).send({ error: 'scope must be "group" or "user"' });
+    }
+    const id = templateId?.trim() || null;
+    const ok = await setDefaultTemplate(scope, id);
+    if (!ok) return reply.code(404).send({ error: "that template no longer exists" });
+    return { templates: await listTemplates() };
+  });
+
   app.delete("/api/templates/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    // Deleting the row clears its default with it (the column goes too), so
+    // the scope simply falls back to the built-in behaviour until someone
+    // picks a new default.
     const ok = await deleteTemplate(id);
     if (!ok) return reply.code(404).send({ error: "not found" });
     reply.send({ ok: true });

@@ -8,7 +8,7 @@ import * as api from "../api";
  * run: the server auto-fills email/password, then stops for "Stay signed
  * in?"/2FA to be finished by hand in the live view that opens next.
  *
- * Opened from inside a department (`groupId`), it also puts the new person
+ * Opened from inside a department (`groupId`), it also puts the new user
  * straight into that department, so "add someone to IT" is one action.
  */
 export function AddUserModal({
@@ -109,7 +109,7 @@ export function AddUserModal({
     >
       <div className="modal-panel modal-form" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <span>{editing ? `Edit ${user!.name}` : groupName ? `Add a person to ${groupName}` : "Add user"}</span>
+          <span>{editing ? `Edit ${user!.name}` : groupName ? `Add a user to ${groupName}` : "Add user"}</span>
           <button type="button" onClick={requestClose}>
             ✕
           </button>
@@ -155,7 +155,7 @@ export function AddUserModal({
               <div className="hint">
                 {groupName
                   ? `Saving also puts them straight into ${groupName}.`
-                  : "Which company or client this person belongs to."}
+                  : "Which company or client this user belongs to."}
               </div>
             </div>
             <div className="form-row">

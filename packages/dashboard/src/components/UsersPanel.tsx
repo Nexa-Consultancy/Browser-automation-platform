@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { PlatformUser } from "../types";
 import * as api from "../api";
 import { AddUserModal } from "./AddUserModal";
+import { UserStatusChip } from "./UserStatusChip";
 
 /** A reusable user's own real Teams login, separate from a group's
  * free-text roster — see AddUserModal for how the sign-in run works. */
@@ -75,10 +76,7 @@ export function UsersPanel({ onOpenJob }: { onOpenJob: (jobId: string) => void }
               <div className="group-title">
                 <span className="group-dot" />
                 <span className="name">{u.name}</span>
-                <span className={`badge ${u.signedIn ? "status-completed" : "status-pending"}`}>
-                  <span className="dot" />
-                  {u.signedIn ? "signed in" : "not signed in"}
-                </span>
+                <UserStatusChip signedIn={u.signedIn} subject={u.name} />
               </div>
             </div>
 

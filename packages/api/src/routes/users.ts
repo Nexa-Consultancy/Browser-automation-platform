@@ -4,16 +4,22 @@ import {
   addUserToGroup,
   createUser,
   deleteUser,
+  deleteUsers,
+  getDefaultTemplate,
   getGroup,
   getJob,
   getOrganization,
   getTemplate,
   getUser,
   getUserPasswordPlain,
+  getUsersByIds,
   listUsers,
   releaseUserActiveJob,
   removeUserFromAllGroups,
+  removeUsersFromAllGroups,
+  removeUsersFromForeignGroups,
   setUserActiveJob,
+  setUsersOrganization,
   updateUser,
 } from "@automation/db";
 import { stashCredential } from "@automation/queue";
@@ -41,9 +47,21 @@ const FALLBACK_LOGIN_CAPTURE_STEPS = [
   'click if visible "Yes"',
 ];
 
+/**
+ * Resolved fresh on every launch, in priority order:
+ *   1. whichever template is marked default for users in Settings,
+ *   2. the seeded "Auto login" row (what this always used),
+ *   3. the hardcoded copy above.
+ *
+ * Reading it per launch rather than caching is deliberate — changing the
+ * default in Settings takes effect on the very next sign-in, with no deploy
+ * and no restart.
+ */
 async function loginCaptureSteps(): Promise<string[]> {
-  const template = await getTemplate(AUTO_LOGIN_TEMPLATE_ID);
-  return template && template.steps.length > 0 ? template.steps : FALLBACK_LOGIN_CAPTURE_STEPS;
+  const chosen = await getDefaultTemplate("user");
+  if (chosen && chosen.steps.length > 0) return chosen.steps;
+  const seeded = await getTemplate(AUTO_LOGIN_TEMPLATE_ID);
+  return seeded && seeded.steps.length > 0 ? seeded.steps : FALLBACK_LOGIN_CAPTURE_STEPS;
 }
 
 /** A job in one of these states is no longer holding any browser open —
@@ -223,6 +241,72 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(500).send({ error: e instanceof Error ? e.message : "could not clear profile" });
     }
     reply.send({ ok: true });
+  });
+
+  /**
+   * The bulk "Move" action behind the Users list.
+   *
+   * Files everyone selected under `organizationId` (null = Unassigned) and,
+   * when `groupId` is given, adds them to that group's roster. Memberships
+   * in groups belonging to any OTHER organization are dropped: leaving
+   * someone on their old company's department after moving them would keep
+   * opening a browser for them there.
+   */
+  app.post("/api/users/move", async (req, reply) => {
+    const { userIds, organizationId, groupId } = (req.body ?? {}) as {
+      userIds?: string[];
+      organizationId?: string | null;
+      groupId?: string | null;
+    };
+    const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map((v) => String(v ?? "").trim()).filter(Boolean))];
+    if (ids.length === 0) return reply.code(400).send({ error: "select at least one user to move" });
+
+    const orgId = organizationId?.trim() || null;
+    if (await organizationMissing(orgId)) {
+      return reply.code(400).send({ error: "that organization no longer exists" });
+    }
+
+    const targetGroupId = groupId?.trim() || null;
+    if (targetGroupId) {
+      const group = await getGroup(targetGroupId);
+      if (!group) return reply.code(400).send({ error: "that group no longer exists" });
+      // A group in a different organization than the one they're being filed
+      // under would be undone immediately by the foreign-group cleanup below.
+      if ((group.organizationId ?? null) !== orgId) {
+        return reply.code(400).send({ error: "that group belongs to a different organization" });
+      }
+    }
+
+    const existing = await getUsersByIds(ids);
+    if (existing.length === 0) return reply.code(400).send({ error: "none of those users still exist" });
+    const liveIds = existing.map((u) => u.id);
+
+    const moved = await setUsersOrganization(liveIds, orgId);
+    await removeUsersFromForeignGroups(liveIds, orgId);
+    if (targetGroupId) {
+      for (const id of liveIds) await addUserToGroup(targetGroupId, id);
+    }
+    reply.send({ ok: true, moved });
+  });
+
+  /** Bulk delete from the Users list. Stops any sign-in run each person is
+   * holding open, then clears them out of every roster before removing the
+   * rows, so no group is left pointing at somebody gone. */
+  app.post("/api/users/bulk-delete", async (req, reply) => {
+    const { userIds } = (req.body ?? {}) as { userIds?: string[] };
+    const ids = [...new Set((Array.isArray(userIds) ? userIds : []).map((v) => String(v ?? "").trim()).filter(Boolean))];
+    if (ids.length === 0) return reply.code(400).send({ error: "select at least one user to delete" });
+
+    const existing = await getUsersByIds(ids);
+    if (existing.length === 0) return reply.code(400).send({ error: "none of those users still exist" });
+
+    for (const user of existing) {
+      if (user.activeJobId) await stopJob(user.activeJobId);
+    }
+    const liveIds = existing.map((u) => u.id);
+    await removeUsersFromAllGroups(liveIds);
+    const deleted = await deleteUsers(liveIds);
+    reply.send({ ok: true, deleted });
   });
 
   app.delete("/api/users/:id", async (req, reply) => {

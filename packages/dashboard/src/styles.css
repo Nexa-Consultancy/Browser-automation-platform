@@ -1163,3 +1163,165 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   .org-section-actions { width: 100%; }
   .org-section-actions button { flex: 1; }
 }
+
+/* ---------- user connection state ----------
+   Two opposite states, so two opposite signal colors. Green online means
+   the saved Teams session is on disk and the next run joins as them; red
+   offline means it is not, which is a problem to fix rather than a neutral
+   "no" — so it reads as an alarm, not as grey. */
+
+.user-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  padding: 2px 9px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  white-space: nowrap;
+}
+.user-status .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+.user-status.online {
+  color: var(--success);
+  border-color: rgba(6, 122, 78, 0.4);
+  background: rgba(6, 122, 78, 0.08);
+}
+.user-status.online .dot { background: var(--success); box-shadow: 0 0 0 3px rgba(6, 122, 78, 0.15); }
+
+.user-status.offline {
+  color: var(--danger);
+  border-color: rgba(192, 38, 59, 0.4);
+  background: rgba(192, 38, 59, 0.07);
+}
+.user-status.offline .dot { background: var(--danger); box-shadow: 0 0 0 3px rgba(192, 38, 59, 0.15); }
+
+.user-status-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ---------- collapsible Advanced section ---------- */
+
+.disclosure {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.disclosure:hover:not(:disabled) { border-color: var(--live); }
+.disclosure[aria-expanded="true"] { border-color: rgba(29, 100, 216, 0.45); background: rgba(29, 100, 216, 0.06); }
+.disclosure-chevron { color: var(--text-faint); font-size: 11px; }
+/* The summary says what is inside without opening it, so a closed section
+   is still informative rather than a blank promise. */
+.disclosure .hint { margin: 0 0 0 auto; text-align: right; }
+
+.disclosure-body {
+  margin-top: 14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line-soft);
+}
+
+/* ---------- template defaults ---------- */
+
+.template-default-badge {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--live);
+  border: 1px solid rgba(29, 100, 216, 0.4);
+  background: rgba(29, 100, 216, 0.07);
+  border-radius: 20px;
+  padding: 2px 8px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+/* ---------- the users list's selection + bulk actions ---------- */
+
+.org-users-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.org-users-head .eyebrow { margin-bottom: 0; }
+
+.org-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.org-select-all input { cursor: pointer; }
+
+.org-selected-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--live);
+  white-space: nowrap;
+}
+
+.org-more { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+
+/* Bulk destinations open as a panel under the header rather than as a
+   floating menu: the two-dropdown move needs real room, and a panel can't
+   be clipped by the card it belongs to. */
+.org-bulk-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(29, 100, 216, 0.4);
+  border-radius: 9px;
+  background: rgba(29, 100, 216, 0.04);
+}
+.org-bulk-panel .form-row { max-width: 420px; }
+.org-bulk-panel .hint { margin: 0; }
+
+.org-user-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  cursor: pointer;
+  min-width: 0;
+}
+.org-user-pick input { cursor: pointer; flex-shrink: 0; }
+
+.org-people-card.selected {
+  border-color: rgba(29, 100, 216, 0.5);
+  background: rgba(29, 100, 216, 0.05);
+}
+.org-people-card .org-people-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.org-user-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.org-user-actions button { font-size: 11.5px; padding: 5px 10px; }
+
+@media (max-width: 640px) {
+  .org-more { margin-left: 0; width: 100%; }
+  .org-more button { flex: 1; }
+  .disclosure { flex-wrap: wrap; }
+  .disclosure .hint { margin-left: 0; text-align: left; width: 100%; }
+}

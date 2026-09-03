@@ -91,6 +91,9 @@ export function GroupModal({
   const [names, setNames] = useState<string[]>(group?.userNames ?? []);
   const [allUsers, setAllUsers] = useState<PlatformUser[]>([]);
   const [templates, setTemplates] = useState<StepTemplate[]>([]);
+  // Which template the Task currently came from, so the picker shows the
+  // default as selected rather than sitting on a blank "Choose…".
+  const [templateId, setTemplateId] = useState("");
   const [linkedIds, setLinkedIds] = useState<string[]>(group?.userIds ?? []);
   const [startTime, setStartTime] = useState(group?.startTime ?? "17:00");
   const [endTime, setEndTime] = useState(group?.endTime ?? "21:00");
@@ -101,6 +104,10 @@ export function GroupModal({
   // existing group it stays hidden until deliberately revealed — the prompt
   // is the private part of a group and shouldn't sit on screen by default.
   const [showPrompt, setShowPrompt] = useState(!group);
+  // Everything most people never touch lives under Advanced, closed. It is
+  // opened automatically when a validation error lands on a field inside it
+  // — an error about a box you cannot see is worse than no error at all.
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set by any edit in the form. Once true, nothing closes this dialog
@@ -111,13 +118,31 @@ export function GroupModal({
 
   useEffect(() => {
     void api.listUsers().then((r) => setAllUsers(r.users)).catch(() => {});
-    void api.listTemplates().then((r) => setTemplates(r.templates)).catch(() => {});
     void api.listOrganizations().then((r) => setOrganizations(r.organizations)).catch(() => {});
-  }, []);
+    void api
+      .listTemplates()
+      .then((r) => {
+        setTemplates(r.templates);
+        // A NEW group starts from whichever template is marked default for
+        // groups. This is what lets Advanced stay closed: a group's Task is
+        // required, so without a prefill the form could not be saved without
+        // expanding it. Editing an existing group never does this — its
+        // saved steps are the whole point of it staying as configured.
+        if (group) return;
+        const fallback = r.templates.find((t) => t.defaultFor === "group");
+        if (!fallback) return;
+        setTemplateId(fallback.id);
+        // Only prefill a Task nobody has typed into yet, so a default
+        // arriving late can't overwrite what someone already wrote.
+        setSteps((current) => (current.trim() ? current : stripAutoOpen(fallback.steps)));
+      })
+      .catch(() => {});
+  }, [group]);
 
   function applyTemplate(id: string) {
     const t = templates.find((x) => x.id === id);
     if (!t) return;
+    setTemplateId(id);
     setSteps(stripAutoOpen(t.steps));
     setShowPrompt(true);
     setDirty(true);
@@ -166,6 +191,9 @@ export function GroupModal({
   }
 
   const crossesMidnight = endTime < startTime;
+  // Named in the Advanced summary so the closed section still says which
+  // task the group will run.
+  const activeTemplate = templates.find((t) => t.id === templateId) ?? null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -186,6 +214,15 @@ export function GroupModal({
     }
     if (startTime === endTime) {
       setError("Start time and end time must differ.");
+      return;
+    }
+    // The Task lives under Advanced. If it's empty the server would refuse
+    // with "task steps are required" about a field that isn't on screen, so
+    // open Advanced and point at it instead.
+    if (!steps.trim()) {
+      setShowAdvanced(true);
+      setShowPrompt(true);
+      setError("This group has no task yet — pick a template or write the steps under Advanced.");
       return;
     }
 
@@ -338,7 +375,7 @@ export function GroupModal({
                         checked={linkedIds.includes(u.id)}
                         onChange={() => toggleLinkedUser(u.id)}
                       />
-                      {u.name} {u.signedIn ? "" : "(not signed in)"}
+                      {u.name} {u.signedIn ? "" : "— offline"}
                     </label>
                   ))}
                 </div>
@@ -348,47 +385,6 @@ export function GroupModal({
                 </div>
               </>
             )}
-          </div>
-
-          <div className="form-section">
-            <div className="eyebrow">Task</div>
-            {editing && (
-              <button type="button" className="reveal-btn" onClick={() => setShowPrompt((v) => !v)}>
-                <span className="eye">{showPrompt ? "🙈" : "👁"}</span>
-                {showPrompt ? "Hide prompt" : "View prompt"}
-              </button>
-            )}
-            {templates.length > 0 && (
-              <div className="form-row" style={{ maxWidth: 280, marginBottom: 10 }}>
-                <label>Use a template</label>
-                <select value="" onChange={(e) => e.target.value && applyTemplate(e.target.value)}>
-                  <option value="">Choose a saved template…</option>
-                  {templates.map((t) => (
-                    <option value={t.id} key={t.id}>
-                      {t.name} ({t.steps.length} steps)
-                    </option>
-                  ))}
-                </select>
-                <div className="hint">Replaces the task below. Manage templates under Settings.</div>
-              </div>
-            )}
-            <div className="form-row" hidden={!showPrompt}>
-              <label>What this group should do (one step per line)</label>
-              <textarea
-                required
-                rows={6}
-                value={steps}
-                onChange={(e) => setSteps(e.target.value)}
-                placeholder={TASK_PLACEHOLDER}
-              />
-              <div className="hint">
-                The link above is opened automatically as step 1. Supported: click X · click if visible X · fill X
-                with Y · fill if visible X with Y (both "if visible" forms skip past instead of failing when the
-                target never appears — for a prompt that only shows up sometimes) · type X ·
-                select X in Y · check/uncheck X · press KEY · wait for text "X" · wait N seconds · wait for video ·
-                wait for element "selector" · screenshot
-              </div>
-            </div>
           </div>
 
           <div className="form-section">
@@ -406,22 +402,11 @@ export function GroupModal({
               </div>
             </div>
 
-            <div className="form-three-col" style={{ marginTop: 14 }}>
+            <div className="form-two-col" style={{ marginTop: 14 }}>
               <div className="form-row">
                 <label>Event time</label>
                 <input type="time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} />
                 <div className="hint">When the thing you're automating actually happens.</div>
-              </div>
-              <div className="form-row">
-                <label>Start early by</label>
-                <select value={leadMinutes} onChange={(e) => setLeadMinutes(Number(e.target.value))}>
-                  {LEAD_CHOICES.map((m) => (
-                    <option value={m} key={m}>
-                      {m === 0 ? "On time" : `${m} minutes before`}
-                    </option>
-                  ))}
-                </select>
-                <div className="hint">Browsers open early so they're logged in before it starts.</div>
               </div>
               <div className="form-row">
                 <label>End</label>
@@ -436,21 +421,105 @@ export function GroupModal({
               <br />
               All times are <strong>{serverTimezone}</strong>.
             </div>
+          </div>
 
-            <label className="switch-row">
-              <input type="checkbox" checked={autoFollow} onChange={(e) => setAutoFollow(e.target.checked)} />
-              <span className="switch-track" aria-hidden="true">
-                <span className="switch-knob" />
+          {/* Everything below is already answered by a sensible default —
+              the Task by the group-default template, the lead by 5 minutes,
+              the schedule switch by "follow it". Closed by default so the
+              common path is name, link, users, times, Save. */}
+          <div className="form-section">
+            <button
+              type="button"
+              className="disclosure"
+              aria-expanded={showAdvanced}
+              onClick={() => setShowAdvanced((v) => !v)}
+            >
+              <span className="disclosure-chevron" aria-hidden="true">
+                {showAdvanced ? "▾" : "▸"}
               </span>
-              <span className="switch-text">
-                <strong>Follow this schedule automatically</strong>
-                <span className="hint">
-                  {autoFollow
-                    ? "The server starts and stops this group on its own — nobody needs the dashboard open. If it's already inside its window when you save, it starts within a few seconds."
-                    : "Held off by hand — this group runs only when you press Join now."}
-                </span>
+              Advanced
+              <span className="hint">
+                {activeTemplate ? `task from “${activeTemplate.name}”` : "task"} · start early ·
+                {autoFollow ? " follows the schedule" : " held off the schedule"}
               </span>
-            </label>
+            </button>
+
+            {showAdvanced && (
+              <div className="disclosure-body">
+                <div className="eyebrow">Task</div>
+                {editing && (
+                  <button type="button" className="reveal-btn" onClick={() => setShowPrompt((v) => !v)}>
+                    <span className="eye">{showPrompt ? "🙈" : "👁"}</span>
+                    {showPrompt ? "Hide prompt" : "View prompt"}
+                  </button>
+                )}
+                {templates.length > 0 && (
+                  <div className="form-row" style={{ maxWidth: 320, marginBottom: 10 }}>
+                    <label>Use a template</label>
+                    <select value={templateId} onChange={(e) => e.target.value && applyTemplate(e.target.value)}>
+                      <option value="">Choose a saved template…</option>
+                      {templates.map((t) => (
+                        <option value={t.id} key={t.id}>
+                          {t.name} ({t.steps.length} steps)
+                          {t.defaultFor === "group" ? " — default" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="hint">
+                      Replaces the task below. The one marked default is filled in automatically for every new
+                      group; change which under Settings → Templates.
+                    </div>
+                  </div>
+                )}
+                <div className="form-row" hidden={!showPrompt}>
+                  <label>What this group should do (one step per line)</label>
+                  <textarea
+                    rows={6}
+                    value={steps}
+                    onChange={(e) => {
+                      setSteps(e.target.value);
+                      // Hand-edited steps are no longer that template's.
+                      setTemplateId("");
+                    }}
+                    placeholder={TASK_PLACEHOLDER}
+                  />
+                  <div className="hint">
+                    The link above is opened automatically as step 1. Supported: click X · click if visible X · fill
+                    X with Y · fill if visible X with Y (both "if visible" forms skip past instead of failing when
+                    the target never appears — for a prompt that only shows up sometimes) · type X · select X in Y ·
+                    check/uncheck X · press KEY · wait for text "X" · wait N seconds · wait for video · wait for
+                    element "selector" · screenshot
+                  </div>
+                </div>
+
+                <div className="form-row" style={{ maxWidth: 320, marginTop: 16 }}>
+                  <label>Start early by</label>
+                  <select value={leadMinutes} onChange={(e) => setLeadMinutes(Number(e.target.value))}>
+                    {LEAD_CHOICES.map((m) => (
+                      <option value={m} key={m}>
+                        {m === 0 ? "On time" : `${m} minutes before`}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="hint">Browsers open early so they're logged in before it starts.</div>
+                </div>
+
+                <label className="switch-row">
+                  <input type="checkbox" checked={autoFollow} onChange={(e) => setAutoFollow(e.target.checked)} />
+                  <span className="switch-track" aria-hidden="true">
+                    <span className="switch-knob" />
+                  </span>
+                  <span className="switch-text">
+                    <strong>Follow this schedule automatically</strong>
+                    <span className="hint">
+                      {autoFollow
+                        ? "The server starts and stops this group on its own — nobody needs the dashboard open. If it's already inside its window when you save, it starts within a few seconds."
+                        : "Held off by hand — this group runs only when you press Join now."}
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
 
           <div className="form-section modal-actions">

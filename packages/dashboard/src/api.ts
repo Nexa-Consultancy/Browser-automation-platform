@@ -8,6 +8,7 @@ import type {
   RunHistoryRow,
   SessionRow,
   StepTemplate,
+  TemplateScope,
 } from "./types";
 
 const API_BASE = ""; // same-origin in prod (nginx proxies /api); Vite dev server proxies /api too
@@ -419,4 +420,47 @@ export async function addUserToGroup(groupId: string, userId: string): Promise<{
  * every other group they belong to. */
 export async function removeUserFromGroup(groupId: string, userId: string): Promise<{ group: GroupWithSchedule }> {
   return json(await fetch(`${API_BASE}/api/groups/${groupId}/users/${userId}`, { method: "DELETE" }));
+}
+
+/** Point a scope's default at one template, or clear it with null. Returns
+ * the full refreshed list, since setting one default releases another. */
+export async function setDefaultTemplate(
+  scope: TemplateScope,
+  templateId: string | null,
+): Promise<{ templates: StepTemplate[] }> {
+  return json(
+    await fetch(`${API_BASE}/api/templates/default`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, templateId }),
+    }),
+  );
+}
+
+// ---------- bulk actions on the Users list ----------
+
+/** File people under an organization, optionally adding them to one of its
+ * groups. Memberships in other organizations' groups are dropped server-side. */
+export async function moveUsers(input: {
+  userIds: string[];
+  organizationId: string | null;
+  groupId: string | null;
+}): Promise<{ ok: boolean; moved: number }> {
+  return json(
+    await fetch(`${API_BASE}/api/users/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function bulkDeleteUsers(userIds: string[]): Promise<{ ok: boolean; deleted: number }> {
+  return json(
+    await fetch(`${API_BASE}/api/users/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userIds }),
+    }),
+  );
 }

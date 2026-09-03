@@ -5,10 +5,11 @@ import { groupMatches, userMatches } from "../orgSearch";
 import { GroupModal } from "./GroupModal";
 import { AddUserModal } from "./AddUserModal";
 import { OrgGroupCard } from "./OrgGroupCard";
+import { OrgUsersSection } from "./OrgUsersSection";
 
 /**
  * The company view: organizations on the left, the selected organization's
- * departments (groups) and people on the right.
+ * departments (groups) and users on the right.
  *
  * Groups and users existed before organizations did, so "no organization"
  * has to remain a real, visible place — UNASSIGNED is a pseudo-organization
@@ -26,7 +27,7 @@ interface OrgLike {
 const UNASSIGNED_ORG: OrgLike = {
   id: UNASSIGNED,
   name: "Unassigned",
-  description: "Groups and people that haven't been filed under an organization yet.",
+  description: "Groups and users that have not been filed under an organization yet.",
 };
 
 /** null (the wire value) ↔ UNASSIGNED (the rail's id for the same thing). */
@@ -60,6 +61,9 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
   const [userModal, setUserModal] = useState<
     { organizationId: string | null; groupId: string | null; groupName: string | null } | null
   >(null);
+  // "Settings" on a user card — the same form as Add, in edit mode, so a
+  // name, email, organization or password change is one surface, not two.
+  const [editingUser, setEditingUser] = useState<PlatformUser | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -244,7 +248,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
         <div className="job-toolbar-title">
           <h2>Organizations</h2>
           <span className="hint">
-            an organization holds departments, a department holds people {serverTimezone && `· all times ${serverTimezone}`}
+            an organization holds departments, a department holds users {serverTimezone && `· all times ${serverTimezone}`}
           </span>
         </div>
       </div>
@@ -258,7 +262,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search everything — organization, department, person, link, or a time like 1:00 PM…"
+            placeholder="Search everything — organization, group, user, link, or a time like 1:00 PM…"
           />
         </div>
         {searching && (
@@ -267,7 +271,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
               {totalHits === 0
                 ? "no matches"
                 : `${matchedGroups.length} group${matchedGroups.length === 1 ? "" : "s"}, ${matchedUsers.length} ${
-                    matchedUsers.length === 1 ? "person" : "people"
+                    matchedUsers.length === 1 ? "user" : "users"
                   }`}
             </span>
             <button type="button" onClick={() => setQuery("")}>
@@ -348,7 +352,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
                     <span className="org-rail-name">{org.name}</span>
                     <span className="org-rail-counts">
                       {counts.groupCount} group{counts.groupCount === 1 ? "" : "s"} · {counts.userCount}{" "}
-                      {counts.userCount === 1 ? "person" : "people"}
+                      {counts.userCount === 1 ? "user" : "users"}
                     </span>
                   </button>
                 </li>
@@ -361,7 +365,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
           {loaded && rail.length === 0 ? (
             <div className="empty-state">
               Nothing here yet. Create an organization — your company, a client, a campus — then add departments to
-              it, and people to those.
+              it, and users to those.
             </div>
           ) : searching && shownOrgs.length === 0 ? (
             <div className="empty-state">Nothing matches “{query.trim()}”.</div>
@@ -425,7 +429,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
                           type="button"
                           onClick={() => setUserModal({ organizationId: wireOrgId(org), groupId: null, groupName: null })}
                         >
-                          + New person
+                          + New user
                         </button>
                         {record && (
                           <>
@@ -445,7 +449,7 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
                     <div className="org-empty-inline">
                       {searching
                         ? `No group in ${org.name} matches that search.`
-                        : `No groups in ${org.name} yet — create one (an "IT department", an evening class, a shift) and put people in it.`}
+                        : `No groups in ${org.name} yet — create one (an "IT department", an evening class, a shift) and put users in it.`}
                     </div>
                   ) : (
                     <div className="org-group-list">
@@ -469,43 +473,22 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
                     </div>
                   )}
 
-                  {/* People are listed at the organization level too: someone
-                      can exist (and have a login) before they belong to any
-                      department, and hiding them would look like data loss. */}
-                  {orgUsers.length > 0 && (
-                    <div className="org-people">
-                      <span className="eyebrow">People in {org.name}</span>
-                      <div className="org-people-grid">
-                        {orgUsers.map((u) => {
-                          const memberships = groups.filter((g) => g.userIds.includes(u.id));
-                          return (
-                            <div className="org-people-card" key={u.id}>
-                              <div className="org-people-name">
-                                <span className={`org-person-chip${u.signedIn ? " signed-in" : ""}`}>
-                                  <span className="dot" />
-                                  {u.name}
-                                </span>
-                              </div>
-                              <div className="org-people-email" title={u.email}>
-                                {u.email}
-                              </div>
-                              <div className="org-people-groups">
-                                {memberships.length === 0 ? (
-                                  <span className="org-muted">in no group yet</span>
-                                ) : (
-                                  memberships.map((g) => (
-                                    <span className="org-group-tag" key={g.id}>
-                                      {g.name}
-                                    </span>
-                                  ))
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  {/* Groups first, then everyone in the organization — a
+                      user can exist (and have a login) before they belong to
+                      any department, so the roster is always shown, even
+                      empty. Hiding it would look like data loss. */}
+                  <OrgUsersSection
+                    key={org.id}
+                    organizationId={wireOrgId(org)}
+                    organizationName={org.name}
+                    users={orgUsers}
+                    allGroups={groups}
+                    organizations={organizations}
+                    onChanged={refresh}
+                    onError={setError}
+                    onEditUser={(u) => setEditingUser(u)}
+                    onOpenJob={onOpenJob}
+                  />
                 </section>
               );
             })
@@ -535,6 +518,21 @@ export function OrganizationsView({ onOpenJob }: { onOpenJob: (jobId: string) =>
           onClose={() => setUserModal(null)}
           onSaved={(jobId) => {
             setUserModal(null);
+            void refresh();
+            if (jobId) onOpenJob(jobId);
+          }}
+        />
+      )}
+
+      {editingUser && (
+        // Keyed by id so switching straight from one user's Settings to
+        // another's remounts the form with the new values.
+        <AddUserModal
+          key={editingUser.id}
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSaved={(jobId) => {
+            setEditingUser(null);
             void refresh();
             if (jobId) onOpenJob(jobId);
           }}

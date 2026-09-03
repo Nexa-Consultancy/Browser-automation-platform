@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { GroupWithSchedule, PlatformUser } from "../types";
 import * as api from "../api";
 import { describeDays, relative, to12Hour } from "../format";
+import { UserStatusChip } from "./UserStatusChip";
 
 /**
  * One department, as a card. The four things the card has to answer at a
@@ -25,7 +26,7 @@ export function OrgGroupCard({
 }: {
   group: GroupWithSchedule;
   organizationName: string;
-  /** People in this organization who aren't in this group yet. */
+  /** Users in this organization who are not in this group yet. */
   candidates: PlatformUser[];
   expanded: boolean;
   onToggle: () => void;
@@ -80,17 +81,14 @@ export function OrgGroupCard({
 
       <div className="org-group-facts">
         <div className="org-fact">
-          <span className="org-fact-label">People</span>
+          <span className="org-fact-label">Users</span>
           <span className="org-fact-value">
             {headcount === 0 ? (
               <span className="org-muted">nobody yet</span>
             ) : (
               <span className="org-people-chips">
                 {group.linkedUsers.map((u) => (
-                  <span className={`org-person-chip${u.signedIn ? " signed-in" : ""}`} key={u.id}>
-                    <span className="dot" />
-                    {u.name}
-                  </span>
+                  <UserStatusChip signedIn={u.signedIn} name={u.name} showLabel={false} key={u.id} />
                 ))}
                 {group.userNames.map((n, i) => (
                   <span className="org-person-chip guest" key={`${n}-${i}`} title="Typed guest name — no login of their own">
@@ -150,25 +148,21 @@ export function OrgGroupCard({
         <div className="org-group-body">
           <div className="org-roster">
             <div className="org-roster-head">
-              <span className="eyebrow">People in {group.name}</span>
+              <span className="eyebrow">Users in {group.name}</span>
               <button type="button" onClick={onAddPerson}>
-                + Add a person
+                + Add a user
               </button>
             </div>
 
             {group.linkedUsers.length === 0 && group.userNames.length === 0 && (
               <div className="org-empty-inline">
-                Nobody in {group.name} yet — add a person, or bring someone across from {organizationName}.
+                Nobody in {group.name} yet — add a user, or bring one across from {organizationName}.
               </div>
             )}
 
             {group.linkedUsers.map((u) => (
               <div className="org-roster-row" key={u.id}>
-                <span className={`org-person-chip${u.signedIn ? " signed-in" : ""}`}>
-                  <span className="dot" />
-                  {u.name}
-                </span>
-                <span className="org-muted">{u.signedIn ? "signed in" : "not signed in"}</span>
+                <UserStatusChip signedIn={u.signedIn} name={u.name} />
                 <button
                   type="button"
                   disabled={busy}
@@ -250,7 +244,7 @@ export function OrgGroupCard({
               className="danger"
               disabled={busy}
               onClick={() => {
-                if (confirm(`Delete "${group.name}"? Any run it has open will be stopped. The people in it are not deleted.`)) {
+                if (confirm(`Delete "${group.name}"? Any run it has open will be stopped. The users in it are not deleted.`)) {
                   void act(() => api.deleteGroup(group.id));
                 }
               }}

@@ -1,8 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { StepTemplate } from "../types";
+import type { StepTemplate, TemplateScope } from "../types";
 import * as api from "../api";
 
 const AUTO_LOGIN_TEMPLATE_ID = "00000000-0000-0000-0000-000000000002";
+
+/** What each default actually controls, in the words of the thing it
+ * affects — the label has to say where the script will show up. */
+const SCOPES: { scope: TemplateScope; label: string; badge: string; explains: string }[] = [
+  {
+    scope: "group",
+    label: "Default for new groups",
+    badge: "group default",
+    explains: "Fills in the Task of every new group, so a group can be created without touching Advanced.",
+  },
+  {
+    scope: "user",
+    label: "Default for new users",
+    badge: "user default",
+    explains: "The sign-in script run when a user is added or re-signed in.",
+  },
+];
 
 function TemplateModal({
   template,
@@ -128,11 +145,29 @@ export function TemplatesSettings() {
     void refresh();
   }, [refresh]);
 
+  /** Clicking the badge of a template that already holds the scope clears
+   * it — the same control both sets and unsets, so there is never a
+   * separate "remove default" button to hunt for. */
+  async function toggleDefault(t: StepTemplate, scope: TemplateScope) {
+    setBusy(t.id);
+    setError(null);
+    try {
+      await api.setDefaultTemplate(scope, t.defaultFor === scope ? null : t.id);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function remove(t: StepTemplate) {
     const warning =
-      t.id === AUTO_LOGIN_TEMPLATE_ID
-        ? `Delete "${t.name}"? This is the script "Add user" runs to sign someone in — deleting it falls back to a built-in default.`
-        : `Delete template "${t.name}"? Groups already using it keep their own copy of the steps.`;
+      t.defaultFor
+        ? `Delete "${t.name}"? It is currently the ${t.defaultFor === "group" ? "group" : "user"} default — deleting it falls back to the built-in behaviour until you pick another.`
+        : t.id === AUTO_LOGIN_TEMPLATE_ID
+          ? `Delete "${t.name}"? This is the script "Add user" runs to sign someone in — deleting it falls back to a built-in default.`
+          : `Delete template "${t.name}"? Groups already using it keep their own copy of the steps.`;
     if (!confirm(warning)) return;
     setBusy(t.id);
     try {
@@ -150,7 +185,10 @@ export function TemplatesSettings() {
       <div className="job-toolbar">
         <div className="job-toolbar-title">
           <h2>Templates</h2>
-          <span className="hint">Reusable step scripts — pick one instead of retyping a group's Task.</span>
+          <span className="hint">
+            Reusable step scripts. Mark one as the default for groups and one for users — those are used
+            automatically everywhere, and can still be changed on the spot.
+          </span>
         </div>
         <div className="job-toolbar-actions">
           <button className="primary" onClick={() => setModal("new")}>
@@ -168,14 +206,34 @@ export function TemplatesSettings() {
           <div className="card session-box" key={t.id}>
             <div className="session-head">
               <span className="name">{t.name}</span>
+              {SCOPES.filter((s) => t.defaultFor === s.scope).map((s) => (
+                <span className="template-default-badge" key={s.scope} title={s.explains}>
+                  ★ {s.badge}
+                </span>
+              ))}
             </div>
             <div className="group-meta">
               <span>
                 {t.steps.length} step{t.steps.length === 1 ? "" : "s"}
               </span>
-              {t.id === AUTO_LOGIN_TEMPLATE_ID && <span className="hint">used by "Add user"</span>}
+              {t.id === AUTO_LOGIN_TEMPLATE_ID && <span className="hint">seeded sign-in script</span>}
             </div>
             <div className="session-controls">
+              {SCOPES.map((s) => (
+                <button
+                  key={s.scope}
+                  className={t.defaultFor === s.scope ? "control-on" : ""}
+                  disabled={busy === t.id}
+                  title={
+                    t.defaultFor === s.scope
+                      ? `Stop using "${t.name}" as the ${s.scope} default.`
+                      : `${s.label}. ${s.explains}`
+                  }
+                  onClick={() => void toggleDefault(t, s.scope)}
+                >
+                  {t.defaultFor === s.scope ? `★ ${s.label}` : `☆ ${s.label}`}
+                </button>
+              ))}
               <button disabled={busy === t.id} onClick={() => setModal(t)}>
                 Edit
               </button>

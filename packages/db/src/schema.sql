@@ -204,3 +204,32 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organ
 
 CREATE INDEX IF NOT EXISTS idx_groups_organization_id ON groups(organization_id);
 CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id);
+
+-- Which creation flow a template is THE default for: 'group' prefills a new
+-- group's Task, 'user' is the sign-in script "Add user" runs. NULL for every
+-- other template.
+--
+-- The partial unique index is what makes "the default" unambiguous: at most
+-- one row can hold each scope, so setting a new default has to release the
+-- old one rather than quietly leaving two.
+ALTER TABLE step_templates ADD COLUMN IF NOT EXISTS default_for TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_step_templates_default_for
+  ON step_templates (default_for) WHERE default_for IS NOT NULL;
+
+-- Adopt the two seeded templates as the starting defaults, but only if
+-- nothing already claims the scope — a real choice made in Settings must
+-- never be overwritten by a later migration run.
+--
+-- 'user' preserves existing behaviour exactly: "Add user" already ran the
+-- Auto login row by fixed id. 'group' matters more than it looks — a group's
+-- Task is required, and the Task field now lives under a collapsed Advanced
+-- section, so without a group default a new group could not be saved without
+-- expanding it first.
+UPDATE step_templates SET default_for = 'user'
+ WHERE id = '00000000-0000-0000-0000-000000000002'
+   AND NOT EXISTS (SELECT 1 FROM step_templates WHERE default_for = 'user');
+
+UPDATE step_templates SET default_for = 'group'
+ WHERE id = '00000000-0000-0000-0000-000000000001'
+   AND NOT EXISTS (SELECT 1 FROM step_templates WHERE default_for = 'group');
