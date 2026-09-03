@@ -142,17 +142,39 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
     if (group.activeJobId || group.lastOccurrenceKey === state.occurrenceKey) return;
 
     // The scheduler has no account of its own; a group already names the
-    // workspace it belongs to, so scope the roster lookup to that.
-    const linked = await getUsersByIds(group.userIds, group.accountId ?? "");
+    // workspace it belongs to, so scope the roster lookup to that. A group
+    // predating workspaces has no account at all, and passing "" for it made
+    // Postgres reject the whole query (uuid = '') — which threw out of
+    // evaluateGroup on every single tick, so the group never ran and the log
+    // filled with the same failure every 20 seconds.
+    const linked = group.accountId ? await getUsersByIds(group.userIds, group.accountId) : [];
     const users = [...buildNamedUsers(group.userNames), ...buildLinkedUsers(linked)];
-    const { job } = await launchJob({
-      name: `${group.name} — ${state.occurrenceKey}`,
-      targetUrl: group.targetUrl,
-      steps: group.steps,
-      users,
-      accountId: group.accountId,
-      groupId: group.id,
-    });
+
+    // Launching with an empty roster produces a job with no sessions, which
+    // completes instantly and looks — in the run log, in the group card — as
+    // though the group ran fine. Say what actually happened instead.
+    if (users.length === 0) {
+      await abandonOccurrence(group, state.occurrenceKey!, log, "no users are configured for it");
+      return;
+    }
+
+    let job: { id: string };
+    try {
+      ({ job } = await launchJob({
+        name: `${group.name} — ${state.occurrenceKey}`,
+        targetUrl: group.targetUrl,
+        steps: group.steps,
+        users,
+        accountId: group.accountId,
+        groupId: group.id,
+      }));
+    } catch (err) {
+      // Without consuming the occurrence a failing launch is retried every
+      // tick for the rest of the window — the same error, the same alert,
+      // for hours.
+      await abandonOccurrence(group, state.occurrenceKey!, log, errText(err));
+      return;
+    }
 
     // Claim *after* creating the job: a crash mid-launch then leaves the
     // occurrence unclaimed and the next tick retries, rather than marking
@@ -196,6 +218,27 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
       jobId,
     });
   }
+}
+
+/**
+ * Marks an occurrence as dealt with when it could not be started, and says
+ * why exactly once.
+ *
+ * The occurrence has to be consumed even though nothing ran: the window
+ * stays open for hours after this, and an unconsumed occurrence is retried
+ * on every tick — turning one misconfigured group into the same alert every
+ * 20 seconds until its end time.
+ */
+async function abandonOccurrence(group: Group, occurrenceKey: string, log: Logger, reason: string): Promise<void> {
+  await releaseGroupRun(group.id, occurrenceKey, false);
+  log.error(`group ${group.name}: window opened but nothing started — ${reason}`);
+  void raiseAlert({
+    level: "ERROR",
+    lifecycle: true,
+    source: "scheduler",
+    message: `Did not start — ${reason}. This window is skipped; the next one will be tried as normal.`,
+    groupName: group.name,
+  });
 }
 
 function errText(err: unknown): string {

@@ -334,11 +334,21 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const linked = await getUsersByIds(group.userIds, account);
+    const users = [...buildNamedUsers(group.userNames), ...buildLinkedUsers(linked)];
+    // A roster that resolves to nobody produces a job with no sessions: it
+    // completes the instant it starts and reads, everywhere afterwards, as a
+    // run that went fine. Refuse it here so pressing Join now says why.
+    if (users.length === 0) {
+      return reply.code(400).send({
+        error: "this group has no users to run — add a name or link a person to it first",
+      });
+    }
+
     const { job } = await launchJob({
       name: `${group.name} — manual run`,
       targetUrl: group.targetUrl,
       steps: group.steps,
-      users: [...buildNamedUsers(group.userNames), ...buildLinkedUsers(linked)],
+      users,
       groupId: group.id,
       // Without this the run is created owned by nobody, and every
       // account-scoped read of it then fails — including the WebSocket's

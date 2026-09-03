@@ -62,14 +62,54 @@ export async function registerWs(app: FastifyInstance): Promise<void> {
     const pub = newRedisConnection();
     const subscribed = new Set<string>();
 
+    /** A frame can be published in the moment between the browser closing the
+     * socket and this handler being torn down, and sending on a closed socket
+     * throws out of the Redis message callback — where nothing catches it. */
+    function send(payload: unknown): void {
+      if (socket.readyState !== socket.OPEN) return;
+      try {
+        socket.send(JSON.stringify(payload));
+      } catch {
+        // The socket went away mid-send; the close handler does the cleanup.
+      }
+    }
+
+    /** Idempotent, and marked *before* awaiting: two subscribe messages
+     * arriving together would otherwise both see an empty set and each
+     * subscribe, which duplicates every frame on the wire. */
+    async function subscribeOnce(channel: string): Promise<void> {
+      if (subscribed.has(channel)) return;
+      subscribed.add(channel);
+      try {
+        await sub.subscribe(channel);
+      } catch (err) {
+        subscribed.delete(channel);
+        throw err;
+      }
+    }
+
     sub.on("message", (channel: string, message: string) => {
       if (channel.startsWith("events:job:")) {
-        socket.send(JSON.stringify({ type: "event", event: JSON.parse(message) }));
+        send({ type: "event", event: JSON.parse(message) });
       } else if (channel.startsWith("screencast:session:")) {
         const sessionId = channel.split(":").pop();
-        socket.send(JSON.stringify({ type: "screencast", sessionId, frame: message }));
+        send({ type: "screencast", sessionId, frame: message });
       }
     });
+
+    // nginx is configured to hold this open for hours (a "wait for video"
+    // step legitimately needs that), but a parked session sends nothing at
+    // all — and any proxy or load balancer in front of this with its own
+    // shorter idle timeout would quietly cut a healthy connection. A ping
+    // costs nothing and keeps the path warm.
+    const heartbeat = setInterval(() => {
+      if (socket.readyState !== socket.OPEN) return;
+      try {
+        socket.ping();
+      } catch {
+        // Same as above — the close handler cleans up.
+      }
+    }, 30_000);
 
     socket.on("message", async (raw: Buffer) => {
       // Every message waits on the same one-shot auth promise, so a frame
@@ -89,30 +129,20 @@ export async function registerWs(app: FastifyInstance): Promise<void> {
         // somebody's browser — so ownership is checked here, not assumed
         // from the fact that the socket authenticated at all.
         if (!(await jobBelongsToAccount(msg.jobId, account.id))) {
-          socket.send(JSON.stringify({ type: "error", error: "not found" }));
+          send({ type: "error", error: "not found" });
           return;
         }
-        const evCh = eventsChannel(msg.jobId);
-        if (!subscribed.has(evCh)) {
-          await sub.subscribe(evCh);
-          subscribed.add(evCh);
-        }
+        await subscribeOnce(eventsChannel(msg.jobId));
         const sessions = await listSessionsByJob(msg.jobId);
         for (const s of sessions) {
-          const ch = screencastChannel(s.id);
-          if (!subscribed.has(ch)) {
-            await sub.subscribe(ch);
-            subscribed.add(ch);
-          }
+          await subscribeOnce(screencastChannel(s.id));
           // CDP only pushes frames on repaint, so a static/idle page may
           // never send another one — without this, a (re)connecting client
           // sees "waiting for stream…" forever even on a healthy session.
           const lastFrame = await pub.get(screencastLastFrameKey(s.id));
-          if (lastFrame) {
-            socket.send(JSON.stringify({ type: "screencast", sessionId: s.id, frame: lastFrame }));
-          }
+          if (lastFrame) send({ type: "screencast", sessionId: s.id, frame: lastFrame });
         }
-        socket.send(JSON.stringify({ type: "subscribed", jobId: msg.jobId, sessions }));
+        send({ type: "subscribed", jobId: msg.jobId, sessions });
       } else if (msg.type === "input" && msg.sessionId && msg.action) {
         const control: ControlMessage = { type: "input", action: msg.action };
         await pub.publish(controlChannel(msg.sessionId), JSON.stringify(control));
@@ -120,6 +150,7 @@ export async function registerWs(app: FastifyInstance): Promise<void> {
     });
 
     socket.on("close", () => {
+      clearInterval(heartbeat);
       sub.disconnect();
       pub.disconnect();
     });
