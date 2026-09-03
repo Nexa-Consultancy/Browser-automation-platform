@@ -1,5 +1,5 @@
 #!/bin/sh
-# Start a virtual X display so the master Teams sign-in can run a real,
+# Start a virtual X display so a user's login-capture run can run a real,
 # non-headless browser (Microsoft blocks headless logins). Ordinary runs are
 # headless and ignore it. Running Xvfb explicitly and exec-ing the worker is
 # far more reliable for a long-lived service than wrapping it in xvfb-run.

@@ -11,7 +11,6 @@ import {
 } from "@automation/db";
 import { newRedisConnection, screencastChannel, screencastLastFrameKey, takeCredential } from "@automation/queue";
 import {
-  MASTER_LOGIN_JOB_NAME,
   USER_LOGIN_CAPTURE_JOB_NAME,
   parseSteps,
   type Job,
@@ -125,19 +124,12 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // Fixed viewport so the dashboard's screencast click passthrough can map
   // displayed pixel coordinates back to real page coordinates deterministically
   // (see packages/dashboard/src/viewport.ts — keep these two in sync).
-  // The master Teams sign-in runs as a REAL, visible browser (on the
-  // worker's virtual display) because Microsoft rejects headless logins —
-  // that was the actual cause of the sign-in failing on the server. Every
-  // other run stays headless: reusing already-saved cookies doesn't trip the
-  // same check, and headless is far lighter. This is why the login must
-  // happen here, in the environment that will use it: cookies are encrypted
-  // with this machine's key and Teams' IndexedDB tokens are written
-  // natively, so "Apply master login" copies a profile that actually works.
-  const isMasterLogin = job.name === MASTER_LOGIN_JOB_NAME && !job.groupId;
-  // Same reasoning as the master login above (Microsoft rejects headless
-  // logins, and a human needs to see the screen to finish "Stay signed
-  // in?"/2FA by hand) — a login-capture run for a reusable PlatformUser
-  // needs the same real, visible browser.
+  // A login-capture run for a reusable PlatformUser runs as a REAL, visible
+  // browser (on the worker's virtual display) because Microsoft rejects
+  // headless logins — a human needs to see the screen to finish "Stay
+  // signed in?"/2FA by hand. Every other run stays headless: reusing
+  // already-saved cookies doesn't trip the same check, and headless is far
+  // lighter.
   const isLoginCapture = job.name === USER_LOGIN_CAPTURE_JOB_NAME && !job.groupId;
   // Route the browser through the proxy configured in Settings, if any, so
   // its traffic exits from there rather than this server's own IP. This is
@@ -146,7 +138,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
   // at a proxy elsewhere and see if the same login succeeds.
   const proxy = proxyFromSettings(settings);
   const context = await chromium.launchPersistentContext(plan.dir, {
-    headless: !isMasterLogin && !isLoginCapture,
+    headless: !isLoginCapture,
     viewport: { width: 1280, height: 720 },
     ...(proxy ? { proxy } : {}),
     userAgent:
@@ -155,7 +147,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
       "--disable-blink-features=AutomationControlled",
       // Chromium as root (the container's user) can't sandbox a headful
       // browser; the virtual-display login needs this.
-      ...(isMasterLogin || isLoginCapture ? ["--no-sandbox"] : []),
+      ...(isLoginCapture ? ["--no-sandbox"] : []),
     ],
     ignoreDefaultArgs: ["--enable-automation"],
   });

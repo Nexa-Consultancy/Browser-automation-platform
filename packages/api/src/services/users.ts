@@ -45,8 +45,8 @@ export function userLoginExists(userId: string): boolean {
 }
 
 /** Best-effort removal, same rmSync(recursive+force+retry) shape as
- * clearGroupProfiles/clearMaster in services/profiles.ts — maxRetries rides
- * out the ENOTEMPTY race from a still-live Chromium process. */
+ * clearGroupProfiles in services/profiles.ts — maxRetries rides out the
+ * ENOTEMPTY race from a still-live Chromium process. */
 export function clearUserProfile(userId: string): void {
   rmSync(userDir(userId), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

@@ -52,8 +52,8 @@ export function buildNamedUsers(names: string[]): CsvUserRow[] {
 /**
  * One row per linked, reusable User (see PlatformUser) — carries userId so
  * the worker's profilePlanFor routes the session to that user's own
- * persistent, already-authenticated profile dir instead of any group or
- * master dir. {{name}} and {{email}} are also exposed for use in steps.
+ * persistent, already-authenticated profile dir instead of any group dir.
+ * {{name}} and {{email}} are also exposed for use in steps.
  */
 export function buildLinkedUsers(users: { id: string; name: string; email: string }[]): CsvUserRow[] {
   return users.map((u) => ({ userName: u.name, data: { name: u.name, email: u.email, userId: u.id } }));

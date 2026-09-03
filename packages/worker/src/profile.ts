@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import { MASTER_LOGIN_JOB_NAME, type Job, type SessionRow } from "@automation/shared";
+import type { Job, SessionRow } from "@automation/shared";
 
 /**
  * Where a user's browser profile lives on disk.
@@ -25,26 +25,15 @@ export interface ProfilePlan {
   persistent: boolean;
 }
 
-/** The single shared master profile that Teams is signed into once. */
-export function masterProfileDir(): string {
-  return path.join(ROOT, "_master");
-}
-
 /** A reusable, named PlatformUser's own persistent profile — independent of
- * any group or master dir, so their identity travels with them regardless
- * of which group runs them. See packages/shared/src/csv.ts's buildLinkedUsers,
- * which is what puts session.data.userId here in the first place. */
+ * any group dir, so their identity travels with them regardless of which
+ * group runs them. See packages/shared/src/csv.ts's buildLinkedUsers, which
+ * is what puts session.data.userId here in the first place. */
 export function userProfileDir(userId: string): string {
   return path.join(ROOT, "_user", userId);
 }
 
 export function profilePlanFor(job: Job, session: SessionRow, persistEnabled: boolean): ProfilePlan {
-  // The master-login run signs the one shared account in; its profile must
-  // persist (it is the source every group is seeded from) and never be the
-  // per-group path.
-  if (job.name === MASTER_LOGIN_JOB_NAME && !job.groupId) {
-    return { dir: masterProfileDir(), persistent: true };
-  }
   // A linked PlatformUser's identity travels with them regardless of which
   // job or group is running them — checked before the group-scoped branch
   // below, so a linked user inside a group run still resolves to THEIR OWN

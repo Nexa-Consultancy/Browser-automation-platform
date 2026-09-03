@@ -9,14 +9,10 @@ import {
   updateSettings,
   type LogLevel,
 } from "@automation/db";
-import { MASTER_LOGIN_JOB_NAME, buildDefaultUsers, serverTimezone } from "@automation/shared";
+import { serverTimezone } from "@automation/shared";
 import { raiseAlert, sendTestEmail, sendTestDiscord, sendTestTelegram, detectTelegramChats } from "../alerts.js";
-import { launchJob, stopJob } from "../services/launch.js";
+import { stopJob } from "../services/launch.js";
 import { accountId, requireAuth } from "../auth/context.js";
-import { clearMaster, masterLoginExists, PROFILES_DIR } from "../services/profiles.js";
-import { enqueueBakeMaster } from "@automation/queue";
-import { writeFileSync, mkdirSync } from "node:fs";
-import path from "node:path";
 
 /** Builds the Playwright-shaped proxy object from settings, or null when
  * egress routing is off. Shared by the worker (via the API) and the egress
@@ -117,58 +113,6 @@ export async function systemRoutes(app: FastifyInstance): Promise<void> {
       message: "Resumed — the schedule is running again",
     });
     return { ok: true };
-  });
-
-  // Whether the one shared Teams account has been signed in yet.
-  app.get("/api/teams-login/status", async () => ({ signedIn: masterLoginExists() }));
-
-  // Start a one-user run whose profile IS the shared master profile. The
-  // caller opens the returned job in the live view and signs into Teams by
-  // hand once; those cookies become the master that every group is seeded
-  // from. Goes to teams.microsoft.com (a clean login), never a meeting link
-  // — logging in cold from a meeting link is what triggers the cookie error.
-  app.post("/api/teams-login/start", async () => {
-    const { job } = await launchJob({
-      name: MASTER_LOGIN_JOB_NAME,
-      targetUrl: "https://teams.microsoft.com/",
-      steps: ["open {{url}}"],
-      users: buildDefaultUsers(1),
-    });
-    return { jobId: job.id };
-  });
-
-  // Forget the shared login (e.g. wrong account, or to re-do it).
-  app.post("/api/teams-login/clear", async () => {
-    clearMaster();
-    return { ok: true };
-  });
-
-  // Import a Teams session captured on a trusted machine (a Playwright
-  // storageState JSON). This is the reliable path when the server itself
-  // can't complete Microsoft's login: the sign-in happens on the operator's
-  // own browser/IP, and only the resulting session is carried here. The
-  // worker bakes it into the master profile (it has Chromium; the api
-  // doesn't), after which "Apply master login" seeds groups as usual.
-  app.post("/api/teams-login/import", async (req, reply) => {
-    const file = await req.file();
-    if (!file) return reply.code(400).send({ error: "no file uploaded" });
-    const buf = await file.toBuffer();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(buf.toString("utf-8"));
-    } catch {
-      return reply.code(400).send({ error: "not valid JSON — upload the storageState file, not something else" });
-    }
-    if (!parsed || typeof parsed !== "object" || !("cookies" in parsed)) {
-      return reply
-        .code(400)
-        .send({ error: "this file has no cookies — it doesn't look like a captured login" });
-    }
-    mkdirSync(PROFILES_DIR, { recursive: true });
-    const statePath = path.join(PROFILES_DIR, "_master_import.json");
-    writeFileSync(statePath, buf);
-    await enqueueBakeMaster(statePath);
-    reply.send({ ok: true, message: "importing — the master login will be ready in a few seconds" });
   });
 
   app.get("/api/logs", async (req) => {

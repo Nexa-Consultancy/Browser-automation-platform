@@ -1,14 +1,7 @@
 import { Worker } from "bullmq";
 import { migrate } from "@automation/db";
-import {
-  newRedisConnection,
-  RUN_JOB_QUEUE_NAME,
-  BAKE_MASTER_QUEUE_NAME,
-  type RunJobData,
-  type BakeMasterData,
-} from "@automation/queue";
+import { newRedisConnection, RUN_JOB_QUEUE_NAME, type RunJobData } from "@automation/queue";
 import { runJob } from "./runner.js";
-import { bakeMaster } from "./bakeMaster.js";
 
 async function main() {
   await migrate();
@@ -48,25 +41,11 @@ async function main() {
     console.error("worker error:", err);
   });
 
-  // Second queue: bake a captured Teams session (uploaded storageState) into
-  // the shared master profile. Kept off the run-job queue so this quick
-  // one-shot can't be starved by long-lived parked runs.
-  const bakeWorker = new Worker<BakeMasterData>(
-    BAKE_MASTER_QUEUE_NAME,
-    async (job) => {
-      await bakeMaster(job.data.statePath);
-    },
-    { connection: newRedisConnection(), concurrency: 1 },
-  );
-  bakeWorker.on("failed", (job, err) => {
-    console.error(`bake-master ${job?.id} failed:`, err);
-  });
-
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       // Let BullMQ release in-flight locks cleanly instead of abandoning
       // them for stalled-job recovery to sort out later.
-      Promise.all([worker.close(), bakeWorker.close()]).finally(() => process.exit(0));
+      worker.close().finally(() => process.exit(0));
     });
   }
 

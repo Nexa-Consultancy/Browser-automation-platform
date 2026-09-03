@@ -253,34 +253,6 @@ export async function clearGroupProfiles(id: string): Promise<void> {
   await json(await fetch(`${API_BASE}/api/groups/${id}/clear-profiles`, { method: "POST" }));
 }
 
-// ---------- shared Teams master login ----------
-
-export async function teamsLoginStatus(): Promise<{ signedIn: boolean }> {
-  return json(await fetch(`${API_BASE}/api/teams-login/status`));
-}
-
-/** Start the one-time master sign-in run; returns the job to open and drive. */
-export async function startTeamsLogin(): Promise<{ jobId: string }> {
-  return json(await fetch(`${API_BASE}/api/teams-login/start`, { method: "POST" }));
-}
-
-export async function clearTeamsLogin(): Promise<void> {
-  await json(await fetch(`${API_BASE}/api/teams-login/clear`, { method: "POST" }));
-}
-
-/** Seed every user in a group from the master login. */
-export async function applyMasterToGroup(id: string): Promise<{ seeded: number }> {
-  return json(await fetch(`${API_BASE}/api/groups/${id}/apply-master`, { method: "POST" }));
-}
-
-/** Upload a captured Teams session (Playwright storageState JSON) so the
- * server bakes it into the master profile. */
-export async function importTeamsLogin(file: File): Promise<{ ok: boolean; message?: string }> {
-  const form = new FormData();
-  form.set("file", file);
-  return json(await fetch(`${API_BASE}/api/teams-login/import`, { method: "POST", body: form }));
-}
-
 // ---------- reusable users, each with their own real Teams login ----------
 
 export async function listUsers(): Promise<{ users: PlatformUser[] }> {

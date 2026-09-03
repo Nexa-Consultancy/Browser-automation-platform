@@ -17,8 +17,8 @@ RUN npm install --no-audit --no-fund
 COPY . .
 
 ENV NODE_ENV=production
-# The entrypoint starts a virtual X display (Xvfb) and then the worker, so the
-# master Teams sign-in can run a REAL (non-headless) browser — Microsoft
+# The entrypoint starts a virtual X display (Xvfb) and then the worker, so a
+# user's login-capture run can run a REAL (non-headless) browser — Microsoft
 # blocks headless logins. Ordinary runs stay headless and ignore the display.
 # xvfb ships in the Playwright image.
 CMD ["sh", "/app/packages/worker/entrypoint.sh"]

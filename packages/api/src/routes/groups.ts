@@ -28,7 +28,7 @@ import {
   type GroupWithSchedule,
 } from "@automation/shared";
 import { launchJob, normalizeSteps, stopJob } from "../services/launch.js";
-import { clearGroupProfiles, seedGroupFromMaster, masterLoginExists } from "../services/profiles.js";
+import { clearGroupProfiles } from "../services/profiles.js";
 import { userLoginExists } from "../services/users.js";
 import { raiseAlert } from "../alerts.js";
 import { accountId, requireAuth } from "../auth/context.js";
@@ -305,28 +305,6 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(500).send({ error: e instanceof Error ? e.message : "could not clear profiles" });
     }
     reply.send({ ok: true });
-  });
-
-  // Seed every user in the group from the single shared master login, so
-  // each one opens Teams already signed in — the fix for the guest/cookie
-  // error when a meeting link is opened cold.
-  app.post("/api/groups/:id/apply-master", async (req, reply) => {
-    const account = accountId(req);
-    const { id } = req.params as { id: string };
-    const group = await getGroup(id, account);
-    if (!group) return reply.code(404).send({ error: "not found" });
-    if (group.activeJobId) {
-      return reply.code(409).send({ error: "stop the group's current run before applying the master login" });
-    }
-    if (!masterLoginExists()) {
-      return reply.code(409).send({ error: "no master login yet — sign in under Settings first" });
-    }
-    try {
-      const seeded = seedGroupFromMaster(id, group.userNames.length);
-      reply.send({ ok: true, seeded });
-    } catch (e) {
-      return reply.code(500).send({ error: e instanceof Error ? e.message : "could not apply master login" });
-    }
   });
 
   app.delete("/api/groups/:id", async (req, reply) => {

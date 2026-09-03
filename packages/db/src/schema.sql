@@ -114,8 +114,7 @@ CREATE TABLE IF NOT EXISTS system_logs (
 CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level, created_at DESC);
 
--- Reusable named users, each with their OWN captured Microsoft/Teams login
--- (as opposed to the one shared master profile every group can seed from).
+-- Reusable named users, each with their OWN captured Microsoft/Teams login.
 -- The password is encrypted at rest with pgcrypto (enabled above); the key
 -- lives only in the api process's CREDENTIALS_ENC_KEY env var, never here.
 CREATE TABLE IF NOT EXISTS users (
