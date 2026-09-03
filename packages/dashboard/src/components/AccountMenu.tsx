@@ -9,10 +9,12 @@ import type { SessionAccount } from "../types";
 export function AccountMenu({
   account,
   onSignOut,
+  onOpenRuns,
   onOpenSettings,
 }: {
   account: SessionAccount;
   onSignOut: () => void;
+  onOpenRuns: () => void;
   onOpenSettings: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -71,6 +73,16 @@ export function AccountMenu({
             <span>{account.email}</span>
             {account.role === "admin" && <span className="account-role">admin</span>}
           </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onOpenRuns();
+            }}
+          >
+            Custom run
+          </button>
           <button
             type="button"
             role="menuitem"

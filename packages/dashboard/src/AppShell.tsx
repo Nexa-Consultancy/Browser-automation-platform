@@ -102,16 +102,15 @@ export function AppShell({
           <button className={route.view === "groups" ? "active" : ""} onClick={() => go("#/groups")}>
             Groups
           </button>
-          <button className={route.view === "runs" ? "active" : ""} onClick={() => go("#/runs")}>
-            Custom run
-          </button>
-          <button className={route.view === "settings" ? "active" : ""} onClick={() => go("#/settings")}>
-            Settings
-          </button>
         </nav>
         <div className="app-header-right">
           <EgressBadge />
-          <AccountMenu account={account} onSignOut={onSignOut} onOpenSettings={() => go("#/settings")} />
+          <AccountMenu
+            account={account}
+            onSignOut={onSignOut}
+            onOpenRuns={() => go("#/runs")}
+            onOpenSettings={() => go("#/settings")}
+          />
         </div>
       </header>
 

@@ -10,18 +10,21 @@
 :root {
   color-scheme: light;
 
-  /* surfaces — white page, faintly tinted panels so cards read as raised */
-  --bg: #ffffff;
+  /* surfaces — a deeper, more contrasted light theme: the page itself
+     reads as a distinct gray, panels lift off it as visibly whiter cards,
+     and borders are dark enough to define shape without a shadow. */
+  --bg: #eef0f4;
   --panel: #ffffff;
-  --panel-2: #f4f6fa;
-  --panel-3: #e8ecf4;
-  --line: #d8dee9;
-  --line-soft: #eceff5;
+  --panel-2: #e2e6ee;
+  --panel-3: #d3d9e4;
+  --line: #b7bfd0;
+  --line-soft: #d3d9e4;
 
-  /* text — near-black for anything you read, greys strictly for support */
-  --text: #101828;
-  --text-dim: #5b6474;
-  --text-faint: #8a93a3;
+  /* text — near-black for anything you read, deepened greys for support
+     so secondary text stays legible instead of washing out. */
+  --text: #0a0f1c;
+  --text-dim: #424b5f;
+  --text-faint: #6b7387;
 
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.08);
@@ -67,7 +70,7 @@ button {
   font-weight: 500;
   cursor: pointer;
   border: 1px solid var(--line);
-  background: #ffffff;
+  background: var(--panel);
   color: var(--text);
   border-radius: 6px;
   padding: 7px 13px;
@@ -129,7 +132,7 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(238, 240, 244, 0.92);
   backdrop-filter: blur(8px);
   z-index: 10;
 }
@@ -686,10 +689,10 @@ button.danger:hover:not(:disabled) { background: rgba(192, 38, 59, 0.06); }
 label { font-weight: 500; color: var(--text-dim); }
 .hint { color: var(--text-dim); }
 
-/* Inputs read as fields on white, not as holes in a dark surface. */
+/* Inputs read as fields raised off the page, not as holes in a surface. */
 input[type="text"], input[type="number"], input[type="url"], input[type="search"],
 input[type="time"], input[type="date"], textarea, select {
-  background: #ffffff;
+  background: var(--panel);
   border: 1px solid var(--line);
   box-shadow: var(--shadow-sm) inset;
 }
