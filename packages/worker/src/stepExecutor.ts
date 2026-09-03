@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Locator, Page } from "playwright";
 import { applyTemplate, type ParsedStep } from "@automation/shared";
 import { resolveClickable, resolveField } from "./locators.js";
 import { waitForVideoToEnd } from "./waitForVideo.js";
@@ -17,6 +17,68 @@ export interface StepContext {
 
 const t = (s: string, row: Record<string, string>) => applyTemplate(s, row);
 
+/**
+ * Errors that mean "the page moved under us", as opposed to "this element
+ * isn't here". Deliberately does NOT include a plain timeout: re-running a
+ * step that already waited out its full timeout would just double the wait
+ * for no new information.
+ */
+function isRaceError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /not attached|detached|is not stable|intercepts pointer events|outside of the viewport|Execution context was destroyed|navigation/i.test(
+    message,
+  );
+}
+
+/**
+ * Resolve the element, then act on it — retrying the pair once if the page
+ * re-rendered in between.
+ *
+ * A locator points at the node that existed when it was resolved. Meeting
+ * and chat apps (Teams, Meet, Zoom web) re-render whole subtrees on their
+ * own timers, so the node found a few hundred milliseconds ago can be
+ * detached by the time the click lands — reported as "element is not
+ * attached to the DOM", which then parks the session as a failure even
+ * though the button is right there and a second attempt would have worked.
+ * Resolving again rather than reusing the dead locator is the part that
+ * matters; a bare `.click()` retry would fail identically.
+ */
+async function resolveAndAct(resolve: () => Promise<Locator>, act: (loc: Locator) => Promise<void>): Promise<void> {
+  try {
+    await act(await resolve());
+  } catch (err) {
+    if (!isRaceError(err)) throw err;
+    await act(await resolve());
+  }
+}
+
+/**
+ * Puts text into a field and makes sure it actually landed.
+ *
+ * `fill()` sets the value in one shot and fires a single `input` event.
+ * That is enough for an ordinary form, but a pre-join screen's guest-name
+ * box is usually a controlled component that gates its "Join" button on a
+ * real typing sequence — it ignores the one-shot write, so the value shows
+ * up in the DOM (or doesn't) while the button stays disabled and the next
+ * step then times out clicking a Join that will never enable. Checking what
+ * the field holds afterwards and typing it key by key when the fast path
+ * didn't take turns that dead end into a step that works, at the cost of a
+ * few hundred milliseconds only on the fields that need it.
+ */
+async function fillField(loc: Locator, value: string, timeoutMs: number): Promise<void> {
+  await loc.fill(value, { timeout: timeoutMs });
+  if (value === "") return;
+
+  const landed = await loc.inputValue({ timeout: timeoutMs }).catch(() => null);
+  // A non-input (contenteditable, a custom widget) has no inputValue at all;
+  // there is nothing to verify, so take the fill at its word.
+  if (landed === null || landed === value) return;
+
+  await loc.click({ timeout: timeoutMs });
+  await loc.fill("", { timeout: timeoutMs }).catch(() => {});
+  await loc.pressSequentially(value, { delay: 30, timeout: timeoutMs });
+}
+
 export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext): Promise<void> {
   switch (step.kind) {
     case "open": {
@@ -27,8 +89,11 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "click": {
-      const loc = await resolveClickable(page, t(step.target, ctx.row), ctx.timeoutMs);
-      await loc.click({ timeout: ctx.timeoutMs });
+      const target = t(step.target, ctx.row);
+      await resolveAndAct(
+        () => resolveClickable(page, target, ctx.timeoutMs),
+        (loc) => loc.click({ timeout: ctx.timeoutMs }),
+      );
       return;
     }
 
@@ -47,8 +112,12 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "fill": {
-      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
-      await loc.fill(t(step.value, ctx.row), { timeout: ctx.timeoutMs });
+      const field = t(step.field, ctx.row);
+      const value = t(step.value, ctx.row);
+      await resolveAndAct(
+        () => resolveField(page, field, ctx.timeoutMs),
+        (loc) => fillField(loc, value, ctx.timeoutMs),
+      );
       return;
     }
 
@@ -56,7 +125,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
       const PROBE_MS = 3000;
       try {
         const loc = await resolveField(page, t(step.field, ctx.row), PROBE_MS);
-        await loc.fill(t(step.value, ctx.row), { timeout: PROBE_MS });
+        await fillField(loc, t(step.value, ctx.row), PROBE_MS);
       } catch {
         // Not present — that's fine, this step is optional.
       }
@@ -79,14 +148,20 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "check": {
-      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
-      await loc.check({ timeout: ctx.timeoutMs });
+      const field = t(step.field, ctx.row);
+      await resolveAndAct(
+        () => resolveField(page, field, ctx.timeoutMs),
+        (loc) => loc.check({ timeout: ctx.timeoutMs }),
+      );
       return;
     }
 
     case "uncheck": {
-      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
-      await loc.uncheck({ timeout: ctx.timeoutMs });
+      const field = t(step.field, ctx.row);
+      await resolveAndAct(
+        () => resolveField(page, field, ctx.timeoutMs),
+        (loc) => loc.uncheck({ timeout: ctx.timeoutMs }),
+      );
       return;
     }
 

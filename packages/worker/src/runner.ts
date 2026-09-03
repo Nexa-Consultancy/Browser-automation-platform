@@ -19,7 +19,8 @@ import {
   type InputAction,
 } from "@automation/shared";
 import { subscribeControl } from "./controlListener.js";
-import { startScreencast } from "./screencast.js";
+import { startSessionStream } from "./screencast.js";
+import { trackActivePage } from "./activePage.js";
 import { executeStep } from "./stepExecutor.js";
 import { emitEvent } from "./events.js";
 import { publishAlert } from "./alert.js";
@@ -162,8 +163,12 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
     ],
     ignoreDefaultArgs: ["--enable-automation"],
   });
-  // A persistent context opens with one page already; reuse it.
-  const page = context.pages()[0] ?? (await context.newPage());
+  // A persistent context opens with one page already; reuse it. Everything
+  // downstream drives `active.current` rather than this one page, because a
+  // site that opens a second tab moves the whole session there — see
+  // activePage.ts.
+  const firstPage = context.pages()[0] ?? (await context.newPage());
+  const active = trackActivePage(context, firstPage);
 
   let stopped = false;
   let abort = new AbortController();
@@ -200,7 +205,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
       void emitEvent(session.id, job.id, "log", { message: `${parsed.length} more step(s) queued` });
       resumeWaiter?.();
     } else if (msg.type === "input") {
-      applyInput(page, msg.action).catch((e) => {
+      applyInput(active.current, msg.action).catch((e) => {
         void emitEvent(session.id, job.id, "log", { message: `input failed: ${String(e)}` });
       });
     }
@@ -216,8 +221,9 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
     });
   }
 
+  let stream: Awaited<ReturnType<typeof startSessionStream>> | null = null;
   try {
-    await startScreencast(page, session.id, pub);
+    stream = await startSessionStream(active, session.id, pub);
   } catch (e) {
     await emitEvent(session.id, job.id, "log", { message: `screencast unavailable: ${String(e)}` });
   }
@@ -241,7 +247,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
 
       let stepError: string | null = null;
       try {
-        await executeStep(page, step, {
+        await executeStep(active.current, step, {
           row,
           signal: abort.signal,
           maxVideoWaitMs: MAX_VIDEO_WAIT_MS,
@@ -337,6 +343,8 @@ ${stepError}`,
     await emitEvent(session.id, job.id, "status_change", { status: "failed" });
   } finally {
     control.close();
+    active.dispose();
+    await stream?.stop();
     // Closing a persistent context closes its browser too. The profile dir
     // stays on disk (that's the point); a scratch dir for a one-off run is
     // reclaimed so ad-hoc runs don't leak directories nothing can reuse.
