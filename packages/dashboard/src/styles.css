@@ -318,6 +318,17 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
 }
 .expand-btn:hover { opacity: 1; }
 
+/* Sits alongside the expand button so taking the mouse is offered on the
+   card itself, not only after expanding to the modal. */
+.control-btn {
+  position: absolute; top: 6px; right: 38px; z-index: 3;
+  background: rgba(10, 14, 22, 0.75); border-color: var(--line);
+  padding: 3px 8px; font-size: 11px; line-height: 1.5;
+  opacity: 0.7;
+}
+.control-btn:hover { opacity: 1; }
+.control-btn.control-on { opacity: 1; }
+
 /* ---------- expanded popup ---------- */
 
 .modal-backdrop {
@@ -1947,12 +1958,13 @@ button.big { padding: 11px 20px; font-size: 14px; }
 
 .task-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 14px;
   padding: 12px 16px;
   background: var(--panel);
 }
+.task-row:hover { background: var(--panel-2); }
 /* A left edge rather than a filled row: it marks the live ones without
    turning the list into a block of colour. */
 .task-row.tone-live { box-shadow: inset 2px 0 0 var(--live); }
@@ -1975,10 +1987,29 @@ button.big { padding: 11px 20px; font-size: 14px; }
   white-space: nowrap;
 }
 .task-window {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-dim);
   white-space: nowrap;
+  text-align: right;
+}
+/* The window alone doesn't say whether it is ten minutes away or next week. */
+.task-when {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.task-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.task-actions button {
+  padding: 4px 10px;
+  font-size: 11.5px;
 }
 .task-state {
   font-family: var(--font-mono);
@@ -1999,6 +2030,8 @@ button.big { padding: 11px 20px; font-size: 14px; }
 @media (max-width: 640px) {
   .task-row { grid-template-columns: 1fr; gap: 6px; }
   .task-state { justify-self: start; min-width: 0; }
+  .task-window { text-align: left; }
+  .task-actions { justify-content: flex-start; }
   .org-summary-body { padding-left: 16px; }
 }
 
@@ -2008,4 +2041,118 @@ button.big { padding: 11px 20px; font-size: 14px; }
   margin-top: 34px;
   padding-top: 22px;
   border-top: 1px dashed var(--line);
+}
+
+/* The first-run checklist in the dashboard's empty state. Numbered because
+   the order genuinely matters — a group has nowhere to live until there is
+   an organization and someone to run it. */
+.empty-steps {
+  /* Centred block, left-aligned text: a numbered list reads as a list only
+     when its items share a left edge, but the block still belongs in the
+     middle of the empty panel it sits in. */
+  margin: 10px auto 0;
+  padding-left: 20px;
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+  width: fit-content;
+}
+.empty-state a { color: var(--live); text-decoration: underline; text-underline-offset: 2px; }
+.empty-state a:hover { color: var(--text); }
+.empty-steps li { line-height: 1.55; }
+
+/* ---------- "more actions" menu ---------- */
+
+/* Used where a card's rarely-wanted, hard-to-undo actions would otherwise
+   sit inline at the same size as the everyday ones. */
+.menu-wrap { position: relative; display: inline-flex; }
+
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+}
+.menu-pop button {
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  padding: 7px 9px;
+}
+.menu-pop button:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
+.menu-pop button.danger:hover:not(:disabled) { background: rgba(192, 38, 59, 0.1); }
+
+/* ---------- step-syntax reference ---------- */
+
+/* Collapsed by default: someone who already knows the syntax should not
+   have to scroll past it every time they write a script, and someone who
+   doesn't needs a table rather than the run-on paragraph this replaced. */
+.step-ref {
+  margin-top: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.step-ref > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  user-select: none;
+}
+.step-ref > summary:hover { color: var(--text); }
+.step-ref[open] > summary { border-bottom: 1px solid var(--line-soft); }
+
+.step-ref-body { padding: 10px 12px 12px; display: grid; gap: 2px; }
+
+.step-ref-lead {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.step-ref-lead:last-child { margin: 8px 0 0; }
+
+.step-ref-group {
+  margin-top: 8px;
+  margin-bottom: 3px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.step-ref-row {
+  display: grid;
+  grid-template-columns: minmax(0, 210px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 3px 0;
+}
+.step-ref-row code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.step-ref-row span { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+@media (max-width: 640px) {
+  .step-ref-row { grid-template-columns: 1fr; gap: 2px; }
 }

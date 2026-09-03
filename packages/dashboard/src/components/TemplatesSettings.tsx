@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StepTemplate, TemplateScope } from "../types";
 import * as api from "../api";
+import { StepReference } from "./StepReference";
 
 const AUTO_LOGIN_TEMPLATE_ID = "00000000-0000-0000-0000-000000000002";
 
@@ -97,11 +98,7 @@ function TemplateModal({
             <div className="form-row">
               <label>Steps (one per line)</label>
               <textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} />
-              <div className="hint">
-                Supported: click X · click if visible X · fill X with Y · fill if visible X with Y · type X ·
-                select X in Y · check/uncheck X · press KEY · wait for text "X" · wait N seconds · wait for video ·
-                wait for element "selector" · screenshot · open URL
-              </div>
+              <StepReference />
             </div>
           </div>
           <div className="form-section modal-actions">

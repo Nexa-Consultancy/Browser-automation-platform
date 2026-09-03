@@ -80,7 +80,8 @@ export function UserSessionBox({
 
       <Screencast
         frame={frame}
-        interactive={LIVE_INTERACTIVE.has(session.status)}
+        parked={LIVE_INTERACTIVE.has(session.status)}
+        browserOpen={BROWSER_OPEN.has(session.status)}
         onInput={onInput}
         onExpand={onExpand}
       />

@@ -15,6 +15,17 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [createdOn, setCreatedOn] = useState(""); // "YYYY-MM-DD", empty = any
+  // Which group's "more actions" menu is open, if any — one at a time.
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+
+  // A menu that only closes via its own button is a menu people leave open
+  // and then click straight through by accident.
+  useEffect(() => {
+    if (!menuFor) return;
+    const close = () => setMenuFor(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuFor]);
 
   const filtered = groups.filter((g) => {
     const q = query.trim().toLowerCase();
@@ -245,32 +256,63 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                 <button disabled={busy === g.id} onClick={() => setEditing(g)}>
                   Edit
                 </button>
-                <button
-                  disabled={busy === g.id || live}
-                  title={
-                    live
-                      ? "Stop the run before clearing saved logins"
-                      : "Delete cookies/logins saved for this group's free-text user names (not its linked users — clear one of those from the Users panel instead)"
-                  }
-                  onClick={() => {
-                    if (confirm(`Clear saved logins for "${g.name}"? Every user in it will start the next run signed out.`)) {
-                      void act(g.id, () => api.clearGroupProfiles(g.id));
-                    }
-                  }}
-                >
-                  Clear saved logins
-                </button>
-                <button
-                  className="danger"
-                  disabled={busy === g.id}
-                  onClick={() => {
-                    if (confirm(`Delete group "${g.name}"? Any run it has open will be stopped.`)) {
-                      void act(g.id, () => api.deleteGroup(g.id));
-                    }
-                  }}
-                >
-                  Delete
-                </button>
+
+                {/* Everything past this point either throws away saved
+                    logins or deletes the group. Sat inline, they were two
+                    of six same-sized buttons — "Delete" one position along
+                    from "Clear saved logins", both a single unconfirmed
+                    aim away from the Edit people actually wanted. Behind a
+                    menu they still take one extra click and no longer sit
+                    under the pointer on the way to anything. */}
+                <div className="menu-wrap" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    disabled={busy === g.id}
+                    aria-expanded={menuFor === g.id}
+                    aria-haspopup="menu"
+                    title="More actions"
+                    onClick={() => setMenuFor(menuFor === g.id ? null : g.id)}
+                  >
+                    ⋯
+                  </button>
+                  {menuFor === g.id && (
+                    <div className="menu-pop" role="menu">
+                      <button
+                        role="menuitem"
+                        disabled={busy === g.id || live}
+                        title={
+                          live
+                            ? "Stop the run before clearing saved logins"
+                            : "Delete cookies/logins saved for this group's free-text user names (not its linked users — clear one of those from the Users panel instead)"
+                        }
+                        onClick={() => {
+                          setMenuFor(null);
+                          if (
+                            confirm(
+                              `Clear saved logins for "${g.name}"? Every user in it will start the next run signed out.`,
+                            )
+                          ) {
+                            void act(g.id, () => api.clearGroupProfiles(g.id));
+                          }
+                        }}
+                      >
+                        Clear saved logins
+                      </button>
+                      <button
+                        role="menuitem"
+                        className="danger"
+                        disabled={busy === g.id}
+                        onClick={() => {
+                          setMenuFor(null);
+                          if (confirm(`Delete group "${g.name}"? Any run it has open will be stopped.`)) {
+                            void act(g.id, () => api.deleteGroup(g.id));
+                          }
+                        }}
+                      >
+                        Delete group
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );

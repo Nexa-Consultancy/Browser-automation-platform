@@ -40,6 +40,28 @@ function taskState(g: GroupWithSchedule, paused: boolean): { label: string; tone
 }
 
 /**
+ * The half-sentence under a task's window that answers the question people
+ * actually have — "so when does this happen?".
+ *
+ * The window on its own ("5:00 PM → 9:00 PM") does not answer it: whether
+ * that is in ten minutes or next Tuesday depends on the group's weekdays
+ * and its timezone, neither of which is on the row. The countdown is
+ * computed server-side against the clock that actually fires these, so it
+ * stays honest even when the viewer's own clock is somewhere else.
+ */
+function taskWhen(g: GroupWithSchedule, paused: boolean): string {
+  if (g.activeJobId) {
+    if (g.activeRunIsManual) return "started by hand";
+    return `stops in ${relative(g.schedule.minutesUntilEnd)}`;
+  }
+  if (paused) return "everything is paused";
+  if (!g.enabled) return "only runs on Join now";
+  const spent = g.schedule.occurrenceKey !== null && g.lastOccurrenceKey === g.schedule.occurrenceKey;
+  if (g.schedule.inWindow && !spent) return "starting now";
+  return `starts in ${relative(g.schedule.minutesUntilStart)}`;
+}
+
+/**
  * The landing page.
  *
  * Two audiences, one screen. By default this answers "is the business set
@@ -305,7 +327,17 @@ export function DashboardView({ onOpenJob }: { onOpenJob: (jobId: string) => voi
       {/* Organizations — closed by default; a click reveals what is inside. */}
       {loaded && orgRows.length === 0 && (
         <div className="empty-state">
-          Nothing set up yet — create an organization on the Organizations tab, then add groups and people to it.
+          <p>Nothing set up yet. Three steps, in this order:</p>
+          <ol className="empty-steps">
+            <li>
+              Make an <a href="#/organizations">organization</a> — the company or team the work belongs to.
+            </li>
+            <li>Add the people who will run in it, so each one keeps their own saved login.</li>
+            <li>
+              Create a <a href="#/groups">group</a>: a link, a task written in plain English, and the times it
+              should run. From then on the server does it on its own.
+            </li>
+          </ol>
         </div>
       )}
 
@@ -372,6 +404,12 @@ export function DashboardView({ onOpenJob }: { onOpenJob: (jobId: string) => voi
       </div>
 
       {/* Tasks: one line per group — name, organization, window, state. */}
+      {loaded && orgRows.length > 0 && tasks.length === 0 && !searching && (
+        <div className="empty-state" style={{ marginTop: 20 }}>
+          No scheduled tasks yet — <a href="#/groups">create a group</a> and the server will run it on its own.
+        </div>
+      )}
+
       {tasks.length > 0 && (
         <>
           <div className="eyebrow" style={{ marginTop: 26 }}>
@@ -388,8 +426,40 @@ export function DashboardView({ onOpenJob }: { onOpenJob: (jobId: string) => voi
                   </span>
                   <span className="task-window">
                     {to12Hour(g.schedule.effectiveStart)} → {to12Hour(g.endTime)}
+                    <span className="task-when">{taskWhen(g, paused)}</span>
                   </span>
                   <span className={`task-state ${state.tone}`}>{state.label}</span>
+                  {/* Every one of these used to be a dead end: the row told
+                      you a task was running and gave you no way to look at
+                      it or stop it unless you first found the Developer
+                      view toggle buried in Settings. */}
+                  <span className="task-actions">
+                    {g.activeJobId ? (
+                      <>
+                        <button onClick={() => onOpenJob(g.activeJobId!)}>Watch</button>
+                        <button
+                          className="danger"
+                          disabled={rowBusy === g.id}
+                          onClick={() => void act(g.id, () => api.stopGroupNow(g.id))}
+                        >
+                          Stop
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        disabled={rowBusy === g.id || paused}
+                        title={paused ? "Everything is paused — hit Resume first" : "Start this task right now"}
+                        onClick={() =>
+                          void act(g.id, async () => {
+                            const { jobId } = await api.runGroupNow(g.id);
+                            onOpenJob(jobId);
+                          })
+                        }
+                      >
+                        {rowBusy === g.id ? "Starting…" : "Join now"}
+                      </button>
+                    )}
+                  </span>
                 </div>
               );
             })}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Job, SessionRow, InputAction } from "../types";
-import { applySessionEvent, initSessionLive, type SessionLive } from "../sessionState";
+import { applySessionEvent, initSessionLive, reconcileSession, type SessionLive } from "../sessionState";
 import { useJobSocket } from "../useJobSocket";
 import * as api from "../api";
 import { StatusBadge } from "./StatusBadge";
@@ -15,20 +15,46 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
   const [busy, setBusy] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  /**
+   * Loads the run, then keeps re-reading it on a slow timer.
+   *
+   * The picture and the step-by-step come over the WebSocket, and that is
+   * the only thing that can be live. But events sent while the socket was
+   * down are gone for good — so without this, a connection that blipped
+   * left the grid showing whatever was true at the moment it dropped, with
+   * nothing to say so. The poll is what makes a stale view heal itself; it
+   * is deliberately slow, because it is a safety net and not the mechanism.
+   */
   useEffect(() => {
     let cancelled = false;
-    api
-      .getJob(jobId)
-      .then(({ job, sessions }) => {
+
+    async function load(first: boolean) {
+      try {
+        const { job, sessions } = await api.getJob(jobId);
         if (cancelled) return;
         setJob(job);
-        const map: Record<string, SessionLive> = {};
-        for (const s of sessions) map[s.id] = initSessionLive(s, job.steps);
-        setLive(map);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+        setLive((prev) => {
+          const next: Record<string, SessionLive> = {};
+          for (const s of sessions) {
+            const current = prev[s.id];
+            next[s.id] = current ? reconcileSession(current, s) : initSessionLive(s, job.steps);
+          }
+          return next;
+        });
+        setError(null);
+      } catch (e) {
+        // Only surface a load failure on the first attempt: a poll that
+        // fails while the grid is already on screen should not replace a
+        // working live view with an error page.
+        if (!cancelled && first) setError(e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    void load(true);
+    const timer = setInterval(() => void load(false), 10_000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [jobId]);
 

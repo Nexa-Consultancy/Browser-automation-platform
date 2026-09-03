@@ -25,6 +25,40 @@ export function initSessionLive(session: SessionRow, baseSteps: string[]): Sessi
   return { session, steps: [...baseSteps], frame: null, log: [], video: null, failedIndices: [] };
 }
 
+/**
+ * Folds a freshly-fetched session row back into live state.
+ *
+ * The live view is driven entirely by the WebSocket event stream, which is
+ * the right thing while the socket is up and useless the moment it isn't: a
+ * dropped connection (a laptop lid, a proxy hiccup, a redeploy) silently
+ * loses every event sent while it was down, and the grid then shows the
+ * statuses and step positions from whenever it broke — indefinitely, and
+ * with no sign anything is wrong. Periodically re-reading the row and
+ * merging it here is what makes the view self-correct.
+ *
+ * Only the server-owned fields are taken. The frame, the log and the video
+ * timer exist nowhere but this browser tab, and overwriting them with a
+ * fetch would blank the picture every time the poll came round.
+ */
+export function reconcileSession(state: SessionLive, session: SessionRow): SessionLive {
+  const unchanged =
+    state.session.status === session.status &&
+    state.session.currentStepIndex === session.currentStepIndex &&
+    state.session.totalSteps === session.totalSteps &&
+    state.session.error === session.error;
+  if (unchanged) return state;
+  return {
+    ...state,
+    session: { ...state.session, ...session },
+    // A status the events never delivered is worth saying out loud — it is
+    // the one visible trace that the stream had a gap.
+    log:
+      state.session.status === session.status
+        ? state.log
+        : withLog(state, `● ${session.status.replace("_", " ")} (resynced)`),
+  };
+}
+
 function withLog(state: SessionLive, text: string, err = false): LogEntry[] {
   const entry: LogEntry = { ts: new Date().toLocaleTimeString(), text, err };
   return [...state.log, entry].slice(-200);

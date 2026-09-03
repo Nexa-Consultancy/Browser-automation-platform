@@ -1,5 +1,6 @@
 import { useState } from "react";
 import * as api from "../api";
+import { StepReference } from "./StepReference";
 
 const STEP_PLACEHOLDER = `fill Email with {{email}}
 fill Password with {{password}}
@@ -127,14 +128,7 @@ export function JobForm({ onCreated }: { onCreated: (jobId: string) => void }) {
             onChange={(e) => setSteps(e.target.value)}
             placeholder={STEP_PLACEHOLDER}
           />
-          <div className="hint">
-            Use {"{{columnName}}"} or {"{columnName}"} to pull a value from that user's CSV row/name. Supported:
-            click X · click if visible X · fill X with Y · fill if visible X with Y (both "if visible" forms skip
-            past instead of failing when the target never appears) · type X ·
-            select X in Y · check/uncheck X · press KEY · wait for text "X" ·
-            wait N seconds · wait for video · wait for element "selector" · screenshot · open URL (only needed if
-            you want to navigate somewhere other than the Target URL mid-script)
-          </div>
+          <StepReference />
         </div>
       </div>
 
