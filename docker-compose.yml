@@ -91,7 +91,12 @@ services:
       REDIS_URL: redis://redis:6379
       PROFILES_DIR: /data/profiles
     restart: unless-stopped
-    shm_size: "1gb"
+    # Chromium needs real shared memory for video-heavy tabs (a live call's
+    # WebRTC decode/encode) — too little causes exactly the kind of
+    # mid-session instability that looks like the site randomly dropping a
+    # call. Bumped from 1gb as cheap insurance on a server that also runs
+    # several other resource-hungry apps (see docker-compose CPU sharing).
+    shm_size: "2gb"
     # Persistent per-user browser profiles (cookies, logins, history) so a
     # Teams sign-in done once carries into every later run for that group.
     volumes:
