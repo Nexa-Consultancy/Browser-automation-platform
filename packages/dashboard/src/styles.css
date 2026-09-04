@@ -444,7 +444,6 @@ input[type="file"] { font-size: 12px; color: var(--text-dim); }
   font-family: var(--font-mono); font-size: 12.5px; color: var(--text);
   display: flex; align-items: baseline; gap: 8px;
 }
-.group-window .tz { color: var(--text-faint); font-size: 11px; }
 .group-window .group-days {
   color: var(--text-dim); font-size: 11px; letter-spacing: 0.04em;
   border-right: 1px solid var(--line); padding-right: 8px;
@@ -827,27 +826,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   color: var(--success); padding: 10px 12px; border-radius: 6px; font-size: 13px;
 }
 
-/* ---------- egress badge (top bar) ---------- */
-
-.egress-badge {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-family: var(--font-mono); font-size: 11.5px;
-  padding: 6px 11px; border-radius: 999px;
-  background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim);
-  max-width: 340px; overflow: hidden;
-}
-.egress-badge .dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0;
-}
-.egress-badge.proxied { border-color: rgba(29, 100, 216, 0.4); background: rgba(29, 100, 216, 0.07); }
-.egress-badge.proxied .dot { background: var(--live); }
-.egress-badge.bad { border-color: rgba(192, 38, 59, 0.35); color: var(--danger); }
-.egress-badge.bad .dot { background: var(--danger); }
-.egress-badge .dot.checking { background: var(--live); animation: pulse-soft 1.4s ease-in-out infinite; }
-.egress-badge .egress-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.egress-badge strong { color: var(--text); font-weight: 600; }
-.egress-place { color: var(--text-dim); }
-
 /* Bigger, more comfortable search — the old field was cramped. */
 .search-field input {
   height: 48px; font-size: 15px; padding-left: 40px; border-radius: 9px;
@@ -855,10 +833,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .search-field .search-icon { font-size: 21px; left: 14px; }
 .filter-field input[type="date"] { height: 44px; }
 .filter-bar button { height: 44px; }
-
-@media (max-width: 640px) {
-  .egress-badge { max-width: 100%; order: 4; width: 100%; justify-content: center; }
-}
 
 /* ============================================================
    Organizations — company → department → people.
@@ -986,15 +960,27 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .org-group-head {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 8px;
   width: 100%;
+  padding: 6px 10px 6px 16px;
+}
+
+.org-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  min-width: 0;
   text-align: left;
-  padding: 13px 16px;
+  padding: 7px 6px;
   border: none;
-  border-radius: 0;
+  border-radius: 8px;
   background: transparent;
 }
-.org-group-head:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
+.org-group-toggle:hover:not(:disabled) { background: var(--panel-2); border-color: transparent; }
+
+.org-group-quick-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.org-group-quick-actions button { font-size: 12.5px; padding: 6px 12px; white-space: nowrap; }
 
 .org-group-chevron { color: var(--text-faint); font-size: 11px; width: 10px; flex-shrink: 0; }
 
@@ -1054,16 +1040,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.org-lead {
-  margin-left: 7px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--live);
-  border: 1px solid rgba(29, 100, 216, 0.35);
-  border-radius: 20px;
-  padding: 1px 6px;
 }
 
 /* ---------- people ---------- */

@@ -61,23 +61,46 @@ export function OrgGroupCard({
 
   return (
     <div className={`org-group-card state-${state}${expanded ? " expanded" : ""}`}>
-      {/* The whole head is the expander, so the target is the card rather
-          than a chevron someone has to aim at. */}
-      <button type="button" className="org-group-head" onClick={onToggle} aria-expanded={expanded}>
-        <span className="org-group-chevron" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
-        </span>
-        <span className="org-group-identity">
-          <span className="org-group-name">{group.name}</span>
-          <span className="org-group-state">{state}</span>
-        </span>
-        <span className="org-group-when">
-          <span className="org-group-time">
-            {to12Hour(group.schedule.effectiveStart)} → {to12Hour(group.endTime)}
+      <div className="org-group-head">
+        {/* The toggle covers name/state/time — a chevron someone has to aim
+            at makes a poor expand target. Start/Stop sit outside it as their
+            own buttons, so a quick action doesn't also open the card. */}
+        <button type="button" className="org-group-toggle" onClick={onToggle} aria-expanded={expanded}>
+          <span className="org-group-chevron" aria-hidden="true">
+            {expanded ? "▾" : "▸"}
           </span>
-          <span className="org-group-days">{describeDays(group.days)}</span>
-        </span>
-      </button>
+          <span className="org-group-identity">
+            <span className="org-group-name">{group.name}</span>
+            <span className="org-group-state">{state}</span>
+          </span>
+          <span className="org-group-when">
+            <span className="org-group-time">
+              {to12Hour(group.schedule.effectiveStart)} → {to12Hour(group.endTime)}
+            </span>
+            <span className="org-group-days">{describeDays(group.days)}</span>
+          </span>
+        </button>
+        <div className="org-group-quick-actions">
+          {live ? (
+            <button type="button" className="danger" disabled={busy} onClick={() => void act(() => api.stopGroupNow(group.id))}>
+              ■ Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  const { jobId } = await api.runGroupNow(group.id);
+                  onOpenJob(jobId);
+                })
+              }
+            >
+              ▶ Start
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="org-group-facts">
         <div className="org-fact">
@@ -111,19 +134,6 @@ export function OrgGroupCard({
           >
             {group.targetUrl}
           </a>
-        </div>
-
-        <div className="org-fact">
-          <span className="org-fact-label">Timing</span>
-          <span className="org-fact-value">
-            {to12Hour(group.schedule.effectiveStart)} → {to12Hour(group.endTime)} · {describeDays(group.days)}{" "}
-            <span className="org-muted">{group.timezone}</span>
-            {group.leadMinutes > 0 && (
-              <span className="org-lead" title={`Opens ${group.leadMinutes} min before the ${to12Hour(group.startTime)} event`}>
-                {group.leadMinutes}m early
-              </span>
-            )}
-          </span>
         </div>
 
         <div className="org-fact">

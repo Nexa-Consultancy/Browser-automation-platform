@@ -8,7 +8,6 @@ import { PeoplePanel } from "./components/PeoplePanel";
 import { DashboardView } from "./components/DashboardView";
 import { OrganizationsView } from "./components/OrganizationsView";
 import { SettingsView } from "./components/SettingsView";
-import { EgressBadge } from "./components/EgressBadge";
 import { AccountMenu } from "./components/AccountMenu";
 
 type Route =
@@ -104,7 +103,6 @@ export function AppShell({
           </button>
         </nav>
         <div className="app-header-right">
-          <EgressBadge />
           <AccountMenu
             account={account}
             onSignOut={onSignOut}

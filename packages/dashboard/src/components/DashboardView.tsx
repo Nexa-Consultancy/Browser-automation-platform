@@ -486,7 +486,7 @@ export function DashboardView({ onOpenJob }: { onOpenJob: (jobId: string) => voi
                   </div>
                   <div className="group-meta">
                     <span>
-                      {g.activeRunIsManual ? "Started by hand" : `Stops ${to12Hour(g.endTime)} ${g.timezone}`}
+                      {g.activeRunIsManual ? "Started by hand" : `Stops ${to12Hour(g.endTime)}`}
                       {!g.activeRunIsManual && ` · in ${relative(g.schedule.minutesUntilEnd)}`}
                     </span>
                   </div>

@@ -184,7 +184,6 @@ export function GroupList({ onOpenJob }: { onOpenJob: (jobId: string) => void })
                       {g.leadMinutes}m early
                     </span>
                   )}
-                  <span className="tz">{g.timezone}</span>
                 </div>
               </div>
 
