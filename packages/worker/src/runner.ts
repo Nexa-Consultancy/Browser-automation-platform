@@ -1,4 +1,6 @@
 import { chromium, type Page } from "playwright";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import {
   getSettings,
   getJob,
@@ -28,6 +30,14 @@ import { clearProfileLocks, ensureDir, profilePlanFor, removeDir } from "./profi
 import { proxyFromSettings } from "./proxyFromSettings.js";
 
 const MAX_VIDEO_WAIT_MS = Number(process.env.MAX_VIDEO_WAIT_MS ?? 10_800_000);
+// Chromium's fake microphone, left on its own, synthesizes an audible test
+// tone (a repeating beep) as its simulated input — confirmed by hooking
+// getUserMedia on a real Teams join: the meeting app requests a live mic
+// track regardless of whichever "don't use audio" control the step script
+// clicks, so that beep can end up transmitted into the actual call. Pointing
+// the fake device at a silent WAV instead makes whatever gets captured
+// actual silence, independent of anything Teams' UI does with the track.
+const SILENT_AUDIO_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "assets", "silence.wav");
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** How long an action may wait for its target, from the Settings page.
@@ -157,6 +167,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
       "--disable-blink-features=AutomationControlled",
       "--use-fake-device-for-media-stream",
       "--use-fake-ui-for-media-stream",
+      `--use-file-for-fake-audio-capture=${SILENT_AUDIO_PATH}`,
       // Chromium as root (the container's user) can't sandbox a headful
       // browser; the virtual-display login needs this.
       ...(isLoginCapture ? ["--no-sandbox"] : []),
