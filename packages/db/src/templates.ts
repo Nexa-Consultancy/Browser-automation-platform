@@ -154,7 +154,6 @@ const STARTER_TEMPLATES: { name: string; steps: string[]; defaultFor: TemplateSc
       'click if visible "Continue on this browser"',
       'click if visible "Continue without audio or video"',
       'click if visible "Don\'t use audio"',
-      'click if visible "Turn off camera"',
       'click if visible "Turn camera off"',
       'fill if visible "Type your name" with {{name}}',
       'click "Join"',

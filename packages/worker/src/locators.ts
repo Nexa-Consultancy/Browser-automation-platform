@@ -113,7 +113,8 @@ async function waitForSelector(page: Page, selector: string, timeoutMs: number):
 
 /** Resolves a "click <thing>" target: explicit selectors pass through,
  * everything else is tried as a button, then a link, then a menu item, then
- * a label, then any visible text — waiting for whichever appears first. */
+ * a label, then a tooltip title, then any visible text — waiting for
+ * whichever appears first. */
 export async function resolveClickable(page: Page, target: string, timeoutMs: number): Promise<Locator> {
   if (looksLikeSelector(target)) return waitForSelector(page, target, timeoutMs);
 
@@ -127,6 +128,11 @@ export async function resolveClickable(page: Page, target: string, timeoutMs: nu
       // strategies above never see it.
       page.locator(`[aria-label*="${quoteAttr(target)}" i]`),
       page.getByLabel(target, { exact: false }),
+      // Icon-only toggles (e.g. a camera/mic switch with no visible text and
+      // no aria-label) often carry only a `title` tooltip as their name —
+      // ARIA's own last-resort accessible-name source, but one neither
+      // getByRole nor getByLabel picks up in Playwright.
+      page.getByTitle(target, { exact: false }),
       page.getByText(target, { exact: false }),
     ],
     timeoutMs,
