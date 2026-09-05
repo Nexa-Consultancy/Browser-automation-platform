@@ -88,20 +88,22 @@ function TemplateModal({
             ✕
           </button>
         </div>
-        <form className="form-grid" onSubmit={submit} onChange={() => setDirty(true)}>
-          {error && <div className="error-banner">{error}</div>}
-          <div className="form-section">
-            <div className="form-row">
-              <label>Template name</label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Join meeting" />
-            </div>
-            <div className="form-row">
-              <label>Steps (one per line)</label>
-              <textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} />
-              <StepReference />
+        <form className="modal-form-wrap" onSubmit={submit} onChange={() => setDirty(true)}>
+          <div className="modal-body form-grid">
+            {error && <div className="error-banner">{error}</div>}
+            <div className="form-section">
+              <div className="form-row">
+                <label>Template name</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Join meeting" />
+              </div>
+              <div className="form-row">
+                <label>Steps (one per line)</label>
+                <textarea rows={8} value={steps} onChange={(e) => setSteps(e.target.value)} />
+                <StepReference />
+              </div>
             </div>
           </div>
-          <div className="form-section modal-actions">
+          <div className="modal-actions">
             <button type="button" onClick={requestClose} disabled={busy}>
               Cancel
             </button>

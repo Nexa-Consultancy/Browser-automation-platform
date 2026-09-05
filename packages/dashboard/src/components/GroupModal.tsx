@@ -9,6 +9,7 @@ wait for text "Live"
 wait for video`;
 
 const MAX_USERS = 200;
+const USERS_PER_PAGE = 10;
 
 // Common head-starts. "On time" is kept as an explicit choice rather than an
 // empty field so the default is a decision, not an oversight.
@@ -90,6 +91,7 @@ export function GroupModal({
   // should be enough on its own to save, with no free-text entry forced.
   const [userCount, setUserCount] = useState(group?.userNames.length ?? 0);
   const [names, setNames] = useState<string[]>(group?.userNames ?? []);
+  const [userPage, setUserPage] = useState(1);
   const [allUsers, setAllUsers] = useState<PlatformUser[]>([]);
   const [templates, setTemplates] = useState<StepTemplate[]>([]);
   // Which template the Task currently came from, so the picker shows the
@@ -177,6 +179,10 @@ export function GroupModal({
     const count = Math.max(0, Math.min(MAX_USERS, Math.floor(raw) || 0));
     setUserCount(count);
     setNames((prev) => resizeNames(prev, count));
+    const maxPage = Math.max(1, Math.ceil(count / USERS_PER_PAGE));
+    if (userPage > maxPage) {
+      setUserPage(maxPage);
+    }
   }
 
   function changeName(index: number, value: string) {
@@ -195,6 +201,11 @@ export function GroupModal({
   // Named in the Advanced summary so the closed section still says which
   // task the group will run.
   const activeTemplate = templates.find((t) => t.id === templateId) ?? null;
+
+  const totalUserPages = Math.max(1, Math.ceil(names.length / USERS_PER_PAGE));
+  const effectiveUserPage = Math.min(userPage, totalUserPages);
+  const userStartIndex = (effectiveUserPage - 1) * USERS_PER_PAGE;
+  const visibleNames = names.slice(userStartIndex, userStartIndex + USERS_PER_PAGE);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -278,7 +289,7 @@ export function GroupModal({
         </div>
 
         <form
-          className="form-grid"
+          className="modal-form-wrap"
           onSubmit={submit}
           onChange={() => setDirty(true)}
           // Enter in a single-line field would otherwise submit the form
@@ -292,73 +303,103 @@ export function GroupModal({
             }
           }}
         >
-          {error && <div className="error-banner">{error}</div>}
+          <div className="modal-body form-grid">
+            {error && <div className="error-banner">{error}</div>}
 
-          <div className="form-section">
-            <div className="eyebrow">Target</div>
-            <div className="form-two-col">
-              <div className="form-row">
-                <label>Group name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="IT department"
-                />
-              </div>
-              <div className="form-row">
-                <label>Link</label>
-                <input
-                  type="url"
-                  required
-                  value={targetUrl}
-                  onChange={(e) => setTargetUrl(e.target.value)}
-                  placeholder="https://app.example.com/room/42"
-                />
-              </div>
-            </div>
-            <div className="form-row" style={{ maxWidth: 320, marginTop: 12 }}>
-              <label>Organization</label>
-              <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>
-                <option value="">Unassigned</option>
-                {organizations.map((o) => (
-                  <option value={o.id} key={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-              <div className="hint">
-                Which company or client this group is a department of. Create organizations on the Organizations
-                tab.
-              </div>
-            </div>
-          </div>
-
-          <div className="form-section">
-            <div className="eyebrow">Users</div>
-            <div className="form-row" style={{ maxWidth: 200 }}>
-              <label>Number of users</label>
-              <input
-                type="number"
-                min={0}
-                max={MAX_USERS}
-                value={userCount}
-                onChange={(e) => changeUserCount(Number(e.target.value))}
-              />
-            </div>
-            <div className="name-grid">
-              {names.map((n, i) => (
-                <div className="form-row" key={i}>
-                  <label>User {i + 1}</label>
+            <div className="form-section">
+              <div className="eyebrow">Target</div>
+              <div className="form-two-col">
+                <div className="form-row">
+                  <label>Group name</label>
                   <input
                     type="text"
-                    value={n}
-                    onChange={(e) => changeName(i, e.target.value)}
-                    placeholder={`e.g. ${["Asha", "Ravi", "Meera", "Dev", "Nila"][i % 5]}`}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="IT department"
                   />
                 </div>
-              ))}
+                <div className="form-row">
+                  <label>Link</label>
+                  <input
+                    type="url"
+                    required
+                    value={targetUrl}
+                    onChange={(e) => setTargetUrl(e.target.value)}
+                    placeholder="https://app.example.com/room/42"
+                  />
+                </div>
+              </div>
+              <div className="form-row" style={{ maxWidth: 320, marginTop: 12 }}>
+                <label>Organization</label>
+                <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>
+                  <option value="">Unassigned</option>
+                  {organizations.map((o) => (
+                    <option value={o.id} key={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="hint">
+                  Which company or client this group is a department of. Create organizations on the Organizations
+                  tab.
+                </div>
+              </div>
             </div>
+
+            <div className="form-section">
+              <div className="eyebrow">Users</div>
+              <div className="form-row" style={{ maxWidth: 200 }}>
+                <label>Number of users</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={MAX_USERS}
+                  value={userCount}
+                  onChange={(e) => changeUserCount(Number(e.target.value))}
+                />
+              </div>
+
+              {names.length > USERS_PER_PAGE && (
+                <div className="user-pagination">
+                  <button
+                    type="button"
+                    className="page-btn"
+                    disabled={effectiveUserPage <= 1}
+                    onClick={() => setUserPage((p) => Math.max(1, p - 1))}
+                  >
+                    ‹ Prev
+                  </button>
+                  <span className="page-info">
+                    Showing Users {userStartIndex + 1}–{Math.min(userStartIndex + USERS_PER_PAGE, names.length)} of{" "}
+                    {names.length} (Page {effectiveUserPage} of {totalUserPages})
+                  </span>
+                  <button
+                    type="button"
+                    className="page-btn"
+                    disabled={effectiveUserPage >= totalUserPages}
+                    onClick={() => setUserPage((p) => Math.min(totalUserPages, p + 1))}
+                  >
+                    Next ›
+                  </button>
+                </div>
+              )}
+
+              <div className="name-grid">
+                {visibleNames.map((n, sliceIdx) => {
+                  const i = userStartIndex + sliceIdx;
+                  return (
+                    <div className="form-row" key={i}>
+                      <label>User {i + 1}</label>
+                      <input
+                        type="text"
+                        value={n}
+                        onChange={(e) => changeName(i, e.target.value)}
+                        placeholder={`e.g. ${["Asha", "Ravi", "Meera", "Dev", "Nila"][i % 5]}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             <div className="hint">
               One browser session per user, fully isolated. Each name is available in the task as {"{{name}}"}.
             </div>
@@ -516,8 +557,9 @@ export function GroupModal({
               </div>
             )}
           </div>
+        </div>
 
-          <div className="form-section modal-actions">
+        <div className="modal-actions">
             <button type="button" onClick={requestClose} disabled={submitting}>
               Cancel
             </button>

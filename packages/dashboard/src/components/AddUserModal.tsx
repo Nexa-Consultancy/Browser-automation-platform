@@ -116,74 +116,76 @@ export function AddUserModal({
           </button>
         </div>
 
-        <form className="form-grid" onSubmit={submit} onChange={() => setDirty(true)}>
-          {error && <div className="error-banner">{error}</div>}
+        <form className="modal-form-wrap" onSubmit={submit} onChange={() => setDirty(true)}>
+          <div className="modal-body form-grid">
+            {error && <div className="error-banner">{error}</div>}
 
-          <div className="form-section">
-            <div className="eyebrow">Identity</div>
-            <div className="form-two-col">
-              <div className="form-row">
-                <label>Name</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ray"
-                />
+            <div className="form-section">
+              <div className="eyebrow">Identity</div>
+              <div className="form-two-col">
+                <div className="form-row">
+                  <label>Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Ray"
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Microsoft / Teams email</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="ray@company.com"
+                  />
+                </div>
+              </div>
+              <div className="form-row" style={{ maxWidth: 320 }}>
+                <label>Organization</label>
+                <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>
+                  <option value="">Unassigned</option>
+                  {organizations.map((o) => (
+                    <option value={o.id} key={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="hint">
+                  {groupName
+                    ? `Saving also puts them straight into ${groupName}.`
+                    : "Which company or client this person belongs to."}
+                </div>
               </div>
               <div className="form-row">
-                <label>Microsoft / Teams email</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ray@company.com"
+                <label>Password</label>
+                <PasswordInput
+                  value={password}
+                  onChange={setPassword}
+                  placeholder={editing ? "•••••••• (leave blank to keep unchanged)" : ""}
                 />
+                <div className="hint">
+                  {editing
+                    ? "Only needed if the password changed — entering one re-runs the sign-in below."
+                    : "Used once to auto-fill the sign-in form that opens next. Stored encrypted; only the server can read it, and only to sign in again."}
+                </div>
               </div>
             </div>
-            <div className="form-row" style={{ maxWidth: 320 }}>
-              <label>Organization</label>
-              <select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>
-                <option value="">Unassigned</option>
-                {organizations.map((o) => (
-                  <option value={o.id} key={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
+
+            <div className="form-section">
               <div className="hint">
-                {groupName
-                  ? `Saving also puts them straight into ${groupName}.`
-                  : "Which company or client this person belongs to."}
-              </div>
-            </div>
-            <div className="form-row">
-              <label>Password</label>
-              <PasswordInput
-                value={password}
-                onChange={setPassword}
-                placeholder={editing ? "•••••••• (leave blank to keep unchanged)" : ""}
-              />
-              <div className="hint">
-                {editing
-                  ? "Only needed if the password changed — entering one re-runs the sign-in below."
-                  : "Used once to auto-fill the sign-in form that opens next. Stored encrypted; only the server can read it, and only to sign in again."}
+                Saving opens a live browser: email and password are filled in automatically, including "Stay signed
+                in? → Yes" when Microsoft asks. Finish any 2FA prompt by hand in the view that opens. Once you see
+                Teams itself (calendar/chat), the login is already saved to disk — click <strong>Stop</strong> on
+                that run right away, you don't need to leave it open.
               </div>
             </div>
           </div>
 
-          <div className="form-section">
-            <div className="hint">
-              Saving opens a live browser: email and password are filled in automatically, including "Stay signed
-              in? → Yes" when Microsoft asks. Finish any 2FA prompt by hand in the view that opens. Once you see
-              Teams itself (calendar/chat), the login is already saved to disk — click <strong>Stop</strong> on
-              that run right away, you don't need to leave it open.
-            </div>
-          </div>
-
-          <div className="form-section modal-actions">
+          <div className="modal-actions">
             <button type="button" onClick={requestClose} disabled={submitting}>
               Cancel
             </button>
