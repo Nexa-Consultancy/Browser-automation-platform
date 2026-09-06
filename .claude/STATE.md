@@ -105,6 +105,102 @@ DONE (beyond initial build):
   the modal. It previously offered it only when parked, so clicking a card
   mid-script silently did nothing.
 
+- **Assignments module, Phase 1 (quizzes).** A new top-level tab that runs
+  a portal's MCQ assessments with an LLM. Built ON the existing platform,
+  not beside it — no second backend, no second scheduler, no second queue,
+  no second Chromium lifecycle:
+  * A group gains `group_type` ('standard' | 'assessment'). Same roster,
+    days, window, timezone, lead, Join now and the same scheduler; only the
+    runner the launched job routes to differs.
+  * A job gains `kind` ('automation' | 'assessment') — replacing the old
+    "infer it from job.name" trick used for login capture — plus an
+    `assessment` jsonb SNAPSHOT of the portal config at launch, so editing a
+    template mid-run cannot change a quiz already going.
+  * The quiz engine runs INSIDE the existing runSession, after the normal
+    step script has navigated and logged in, on the same page, under the
+    same stop control and the same screencast. runner.ts gained ~25 lines,
+    not a parallel runner.
+  * New tables: assessment_profiles, assessment_quizzes, quiz_runs,
+    quiz_question_results, assessment_artifacts. Assessment AI settings live
+    in the EXISTING settings table (whitelisted keys, redacted secrets),
+    not a new one.
+  * Events ride session_events + the existing Redis relay, so the existing
+    live view shows quiz progress without knowing what a quiz is. Failures
+    ride the existing Redis alert channel — no second alerting system.
+
+- **Templates now have a type**: plain | json | typescript, filtered at the
+  top of the Templates screen. All three compile to the SAME ParsedStep the
+  English parser produces, so there is one executor and one element
+  resolver, not three. `ParsedStep` gained an optional `targets?: string[]`
+  (ordered resolver hints) and locators.ts now accepts `string | string[]`
+  by concatenating each hint's candidate list — the JSON format's
+  "strategies" reuse the existing waterfall rather than duplicating it.
+  `steps` (jsonb) may now hold objects as well as strings; parseSteps takes
+  both, stepLines() renders both.
+
+- TypeScript templates are stored and validated but NOT executed. Running
+  arbitrary TypeScript from a web form inside the worker is RCE — the worker
+  holds browser profiles, proxy credentials and a DB connection. The seam is
+  designed (a template returns a workflow; the host drives Playwright) and
+  the prerequisites are listed in tsTemplate.ts. Refusing loudly beats an
+  eval().
+
+NEXT (Assignments): the target portal's selectors have NOT been supplied, so
+nothing runs against a real portal yet. Everything portal-specific is in one
+place — packages/shared/src/portalConfig.ts defines the fields, and filling
+one in through Settings → Templates → "Assessment / quiz selectors" is the
+whole integration. Phase 2 (assignments, as opposed to quizzes) is a
+placeholder tab; the DB/queue/worker/results groundwork is already shared.
+
+DECISIONS (Assignments):
+- The AI never touches the browser. Playwright extracts the question and its
+  options, labels the options by POSITION (A, B, C…), and keeps the
+  position→element map. The model gets text and returns an id; the id is an
+  array index. No text matching, so a hallucinated option cannot become a
+  click on the wrong row — and an id that wasn't offered is rejected, not
+  guessed at.
+- The portal is the authority on completion; our DB is durable history. If
+  the portal says submitted and we have no record, we UPDATE OUR RECORD
+  rather than retaking. If the portal says not-started and we have a stale
+  "completed", the portal wins. pendingText is matched BEFORE completedText,
+  because "Not completed" contains "completed" and reading that as done
+  would skip a quiz nobody has taken.
+- Submission is never retried blindly. After submitting, the portal is asked
+  again; a retry happens only when it is unambiguous nothing landed. An
+  ambiguous state counts as "it may have gone through" and fails the run — a
+  failed run someone can inspect beats a duplicate submission nobody can
+  undo. That is also what makes a crashed worker safe.
+- resultSelector is REQUIRED, not optional: it is the only way to ask "is
+  this already submitted?", which the whole idempotency story rests on.
+- Confidence is a routing signal (is a second opinion worth paying for?),
+  never evidence an answer is right. With no fallback configured a
+  low-confidence answer is still submitted — leaving a question blank on the
+  strength of an uncalibrated number would be worse.
+- AI concurrency and browser concurrency are separate settings: one is about
+  somebody else's rate limit, the other about this machine's memory.
+- The AI provider abstraction lives in packages/shared (not the worker) so
+  routing, response validation and config are covered by `npm test` with no
+  API key and no network — a fake provider is all the router ever sees.
+- Only LINKED people can sit an assessment. A free-text roster name is a
+  display string with no identity to record results against.
+- Screenshots are artefacts, not logs: one on completion, one on a failure
+  worth looking at. The question rows are the searchable record.
+- Profile counters are RECOMPUTED from the quiz rows, never incremented —
+  counters that are added to drift, and drift in this number is what would
+  make a run skip a quiz.
+
+GOTCHAS (Assignments):
+- Nothing runs until BOTH the portal selectors and an AI key are set. Both
+  are checked before a run starts (planAssessmentRun) rather than at the
+  first question, so a misconfigured group refuses at the button with a list
+  of what is missing. For a scheduled group it consumes the occurrence and
+  alerts once, exactly like an empty roster already did.
+- Most quiz skips happen at DISCOVERY (reconciliation settles them), not at
+  open time. The open-time decideQuizStart is the second line of defence for
+  a status that changed since discovery, or a stale record of ours.
+- The migration is untested against a live Postgres in this environment
+  (no Docker, no local psql here) — replay schema.sql on first boot as usual.
+
 NEXT: user said more features are coming later; nothing specific queued
 right now. Open decision point from an earlier turn: whether to add a
 lightweight shared-API-token auth gate before this goes on a real server
@@ -155,7 +251,8 @@ GOTCHAS:
   and repos here have no user.name/email or credential helper. Set them
   repo-locally, or change the global to `gitdir/i:`. The credential file
   C:/Abhi/.git-credentials was also written with a UTF-8 BOM and CRLF line
-  endings — git's credential-store parses the  as part of the hostname,
+  endings — git's credential-store parses the 
+ as part of the hostname,
   so it silently returns nothing and every fetch/push falls through to a
   GUI prompt. A `git fetch` failing this way prints NOTHING and leaves
   origin/main stale, which then makes `git pull` say "Already up to date"

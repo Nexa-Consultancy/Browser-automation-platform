@@ -25,6 +25,7 @@ whole team hits the same dashboard at a shared URL.
 - [Quick start](#quick-start) — get it running
 - [Groups](#groups--runs-that-start-themselves) — scheduled, unattended runs
 - [The dashboard](#the-dashboard) — tabs and what each does
+- [Assignments](#assignments--ai-assisted-assessments) — AI-assisted quizzes
 - [Step script](#step-script) — the automation language
 - [Live control](#live-control--mouse-and-keyboard) — driving a session by hand
 - [Settings](#settings) — proxy, email alerts, browser defaults
@@ -128,6 +129,7 @@ session.
 | Tab | What it's for |
 |---|---|
 | **Groups** | Create, edit, search and run scheduled automations |
+| **Assignments** | AI-assisted assessments — see [Assignments](#assignments--ai-assisted-assessments) |
 | **Custom run** | A one-off automation that starts immediately and isn't saved |
 | **View more** | History of every run + daily totals (completed / failed / stopped), searchable and filterable by date |
 | **Settings** | Proxy egress, email alerts, browser defaults |
@@ -204,6 +206,9 @@ Everything here applies to every run, scheduled or one-off.
   **Send test email** button.
 - **Browser defaults** — step timeout, viewport, and whether to keep profiles
   between runs.
+- **Assessment AI** — the models that answer quiz questions, and when a
+  second opinion is worth it. See
+  [Assignments](#assignments--ai-assisted-assessments).
 
 Secrets (proxy and SMTP passwords) are never sent back to the browser; a blank
 field means "leave it unchanged", so you can't accidentally wipe a working
@@ -237,6 +242,169 @@ user, the run, the error and a suggested first move. To use a Gmail account:
    email** to confirm.
 
 Your normal Gmail password will always be rejected — Google blocks it for SMTP.
+
+---
+
+---
+
+## Assignments — AI-assisted assessments
+
+The **Assignments** tab adds a second thing the platform can do with a
+group: instead of running a step script and parking, it can work through a
+portal's quizzes, answering multiple-choice questions with an LLM and
+recording every answer.
+
+It is not a separate application. An assessment group is an ordinary group —
+same roster, same weekdays, same window, same timezone, same **Join now**,
+same scheduler — and its run is an ordinary job, with the same isolated
+Chromium per person, the same screencast, the same live controls, the same
+event log and the same email/Discord/Telegram alerts. The only difference is
+which runner the worker hands the job to.
+
+```
+group (type: assessment)
+   ↓  the existing scheduler, the existing queue
+job (kind: assessment)
+   ↓  the existing step script logs each person in
+quiz engine
+   ↓
+Playwright: read the quiz list → skip what is done → open one
+   ↓
+Playwright: extract the question + its options
+   ↓
+AI: {"selectedOption":"C","confidence":0.91,"reason":"…"}
+   ↓
+Playwright: click option C → Next → Submit → read the result
+   ↓
+Postgres: question log, score, screenshot, history
+```
+
+**The AI never touches the browser.** It receives the question text and the
+option list, and returns an option *id*. That id is an index into the array
+of elements Playwright already found — there is no text matching, and no
+path by which a model's output selects an element. An answer that is not
+valid JSON, or names an option that was not offered, is retried, sent to the
+fallback model, or recorded as a failure. It is never a guess.
+
+### Sections
+
+| Section | What it shows |
+|---|---|
+| **Overview** | Totals, whether the AI is actually configured, and recent results |
+| **Groups** | The assessment groups, and for any that cannot run yet, why |
+| **Users** | Every person's assessment state — completed, pending, failed, average |
+| **Quiz templates** | The templates screen, where a portal's selectors are filled in |
+| **Runs** | One row per attempt at one quiz by one person |
+| **Results** | Organization → group → person → quiz → one attempt in full |
+
+**Assignments** (the second subsection) is a Phase 2 placeholder. The
+database, queue, worker routing and results model are already shared with
+quizzes; what is missing is assignment discovery, content extraction,
+AI-assisted drafting and submission.
+
+### Pointing it at a portal
+
+**No portal selectors ship with this.** Nothing is guessed at — a
+plausible-looking default would look configured and fail against a page
+nobody had ever pointed it at. Filling them in is the whole integration:
+
+1. **Settings → Templates → + Add template**, then open **Assessment / quiz
+   selectors** and fill in the fields. Five are required: the quiz card, the
+   question, the options, Submit, and the result.
+2. **Groups → Edit**, set **Group type** to *Assessment*, and pick that
+   template.
+3. **Settings → Assessment AI**: provider, model, API key.
+
+The fields, and what each one means, are defined in
+`packages/shared/src/portalConfig.ts` — that file is the specification, and
+`PORTAL_CONFIG_FIELDS` in it is what renders the editor, so a new field is
+added there and nowhere else.
+
+`resultSelector` is required for a reason worth knowing: it is not just
+where the score is read, it is the only way to ask the portal *"is this
+already submitted?"* — which is the check the no-duplicate-submission rule
+rests on.
+
+### Not retaking a quiz
+
+The portal is the authority on completion; our database is durable history.
+
+- Discovery reads every quiz card. If the portal says **Submitted** and we
+  have no record, **our record is updated** — the quiz is not retaken.
+- If the portal says **Not started** and we have a stale "completed", the
+  portal wins and the quiz is taken. A reset or reassigned quiz is a real
+  thing.
+- If the portal publishes no status at all, our own record is the only
+  evidence there is, and it stands.
+- `"Not completed"` is never read as completed. That single word is the
+  difference between a correct skip and skipping a quiz nobody has taken.
+
+**Submission is never retried blindly.** After submitting, the portal is
+asked again. A retry happens only when it is unambiguous that nothing
+landed; an ambiguous state is treated as *"it may have gone through"*, which
+fails the run — a failed run someone can look at beats a duplicate
+submission nobody can undo. That is also what makes a crashed worker safe:
+the next run asks the portal, not its own memory.
+
+### Templates: three formats
+
+Templates now have a **type**, filtered at the top of the Templates screen:
+
+| Type | What it is |
+|---|---|
+| **Plain-English** | The original step script. Unchanged — every existing template is this, and runs exactly as before |
+| **JSON** | The same actions as structured data, with ordered *target strategies* so a renamed button doesn't fail a run. Validated before it can be saved |
+| **TypeScript** | Written, checked and stored — **not executed by this build** |
+
+All three reduce to the same normalized workflow and run through the same
+executor and the same element resolution. There is one automation engine,
+not three.
+
+```json
+{
+  "type": "click",
+  "target": {
+    "strategies": [
+      { "by": "role", "role": "button", "name": "Login" },
+      { "by": "text", "text": "Login" },
+      { "by": "css", "selector": "button[type='submit']" }
+    ]
+  }
+}
+```
+
+**TypeScript templates are deliberately not executable yet.** A platform
+that runs arbitrary TypeScript submitted through a web form is a remote code
+execution feature, not a template feature — the worker holds browser
+profiles, proxy credentials and a database connection. What is needed before
+it can be switched on is listed in
+`packages/shared/src/tsTemplate.ts` (`TS_TEMPLATE_RUNTIME_REQUIREMENTS`).
+Until then, saving one works and running one says so.
+
+### Settings → Assessment AI
+
+Provider, model and API key for a primary and an optional fallback; a
+confidence threshold; retries; timeout; and two separate concurrency limits.
+They are separate on purpose — **AI concurrency** is about somebody else's
+rate limit, **browser concurrency** is about this machine's memory, and
+tying them together guarantees one of the two is wrong.
+
+The API key obeys the same rules as the proxy and SMTP passwords: stored
+server-side, never sent back to the browser, and a blank field means "leave
+it unchanged".
+
+A model's self-reported confidence is treated as a routing signal — whether
+a second opinion is worth paying for — and never as evidence that an answer
+is right. With no fallback configured, a low-confidence answer is still
+used; leaving a question blank on the strength of an uncalibrated number
+would be worse.
+
+### What the AI is sent
+
+The question text, the option list, and nothing else. No page HTML, no
+screenshot, no URL, no cookies, and never the person's credentials. Question
+logs are structured and searchable in Postgres; screenshots are captured
+only on completion and on a failure worth looking at, never per question.
 
 ---
 
@@ -317,11 +485,14 @@ npm test            # scheduling/timezone tests (packages/shared)
 
 ```
 packages/
-  shared/     types + step parser + timezone/window math (with tests)
-  db/         Postgres access: jobs, sessions, groups, history, logs, settings
+  shared/     types + step parser + timezone/window math + the JSON template
+              format, the quiz state machine and the AI provider seam (tested)
+  db/         Postgres access: jobs, sessions, groups, history, logs, settings,
+              assessment profiles/quizzes/runs/question logs/artefacts
   queue/      Redis + BullMQ, pub/sub channel names
   api/        Fastify server: routes, group scheduler, alert engine
-  worker/     Playwright runner, step executor, element resolution, screencast
+  worker/     Playwright runner, step executor, element resolution, screencast,
+              assessment/ — the portal adapter and the quiz engine
   dashboard/  React + Vite front-end (served by nginx in prod)
 docker-compose.yml
 .env.example
