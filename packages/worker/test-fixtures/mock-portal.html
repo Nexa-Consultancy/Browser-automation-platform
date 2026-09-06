@@ -1,0 +1,162 @@
+<!doctype html>
+<!--
+  A stand-in assessment portal, for testing the quiz engine without one.
+
+  It is NOT a model of the real target portal — that has not been supplied,
+  and guessing at its markup would be worse than useless. What it is, is a
+  portal shaped the way portals generally are: a list of cards carrying a
+  status, a question screen with radio-style options, Next until the last
+  question, then Submit, then a result. That is enough to exercise every
+  decision the engine makes, and it deliberately includes the details that
+  break naive implementations:
+
+    - a card whose status reads "Not completed" — which contains the word
+      "completed", and must NOT be read as done
+    - a stable data-quiz-id per card, separate from the visible name
+    - the list re-orders after a submission (done quizzes sink to the
+      bottom), so anything holding a remembered index opens the wrong quiz
+    - options whose text shares a common prefix, so text-matching an answer
+      would pick the wrong one
+    - a Next button that is present but disabled on the last question
+
+  Kept as a plain file with no build step and no dependencies so it can also
+  be opened by hand in a browser while working on selectors.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mock Assessment Portal</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; max-width: 720px; }
+    .quiz-card { border: 1px solid #ccc; border-radius: 6px; padding: 12px; margin-bottom: 10px; cursor: pointer; }
+    .quiz-card .quiz-title { font-weight: 600; }
+    .quiz-card .quiz-state { font-size: 12px; color: #666; }
+    .option { display: block; border: 1px solid #ddd; border-radius: 4px; padding: 8px; margin: 6px 0; cursor: pointer; }
+    .option.is-chosen { border-color: #1d64d8; background: #eaf1fd; }
+    button[disabled] { opacity: .5; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Training Portal</h1>
+
+  <!-- ---------- the quiz list ---------- -->
+  <div id="quiz-list"></div>
+
+  <!-- ---------- one quiz ---------- -->
+  <div id="quiz-view" class="hidden">
+    <div id="progress"></div>
+    <h2 id="question-text"></h2>
+    <div id="options"></div>
+    <button id="next-btn">Next</button>
+    <button id="submit-btn" class="hidden">Submit</button>
+  </div>
+
+  <!-- ---------- the result ---------- -->
+  <div id="result-view" class="hidden">
+    <div id="result-banner"></div>
+    <div id="score"></div>
+    <button id="back-btn">Back to list</button>
+  </div>
+
+<script>
+// The answer key is only used to compute a score; the engine never sees it.
+const QUIZZES = [
+  { id: "quiz-alpha", name: "Fire Safety",    submitted: true,  questions: [] },
+  { id: "quiz-bravo", name: "Data Handling",  submitted: false, questions: [
+      { q: "Which of these is personal data?",
+        // Deliberate shared prefix: "A customer's..." x2. Anything matching
+        // the model's answer by TEXT rather than by position can pick wrong.
+        options: ["A customer's home address", "A customer's order count", "A public holiday date", "A product SKU"],
+        correct: 0 },
+      { q: "How long may we keep it?",
+        options: ["Indefinitely", "Only as long as needed", "Ten years exactly", "Until the customer asks"],
+        correct: 1 },
+      { q: "Who may access it?",
+        options: ["Anyone in the company", "Only those who need it", "Only the CEO", "Nobody at all"],
+        correct: 1 },
+  ]},
+  { id: "quiz-chrly", name: "Manual Handling", submitted: false, questions: [
+      { q: "Lift with your...", options: ["Back", "Legs", "Arms only", "One hand"], correct: 1 },
+  ]},
+];
+
+let openQuiz = null;
+let qIndex = 0;
+let chosen = [];
+
+function renderList() {
+  // Completed quizzes sink to the bottom — the re-ordering that catches an
+  // engine which remembers a card's position instead of its id.
+  const ordered = [...QUIZZES].sort((a, b) => Number(a.submitted) - Number(b.submitted));
+  document.getElementById("quiz-list").innerHTML = ordered.map((q) => `
+    <div class="quiz-card" data-quiz-id="${q.id}">
+      <div class="quiz-title">${q.name}</div>
+      <div class="quiz-state">${q.submitted ? "Submitted" : "Not completed"}</div>
+    </div>`).join("");
+
+  for (const el of document.querySelectorAll(".quiz-card")) {
+    el.addEventListener("click", () => open(el.dataset.quizId));
+  }
+  show("quiz-list");
+}
+
+function show(id) {
+  for (const v of ["quiz-list", "quiz-view", "result-view"]) {
+    document.getElementById(v).classList.toggle("hidden", v !== id);
+  }
+}
+
+function open(id) {
+  const quiz = QUIZZES.find((q) => q.id === id);
+  // A submitted quiz cannot be re-opened — the portal itself refuses, which
+  // is the backstop behind our own "do not retake" logic.
+  if (!quiz || quiz.submitted) return;
+  openQuiz = quiz;
+  qIndex = 0;
+  chosen = [];
+  renderQuestion();
+  show("quiz-view");
+}
+
+function renderQuestion() {
+  const q = openQuiz.questions[qIndex];
+  document.getElementById("progress").textContent = `Question ${qIndex + 1} of ${openQuiz.questions.length}`;
+  document.getElementById("question-text").textContent = q.q;
+  document.getElementById("options").innerHTML = q.options
+    .map((t, i) => `<label class="option" data-i="${i}"><span class="option-text">${t}</span></label>`)
+    .join("");
+  for (const el of document.querySelectorAll(".option")) {
+    el.addEventListener("click", () => {
+      for (const o of document.querySelectorAll(".option")) o.classList.remove("is-chosen");
+      el.classList.add("is-chosen");
+      chosen[qIndex] = Number(el.dataset.i);
+    });
+  }
+  const last = qIndex === openQuiz.questions.length - 1;
+  const next = document.getElementById("next-btn");
+  // Present but disabled on the last question — a real pattern, and the one
+  // that separates "no Next control" from "Next is not available yet".
+  next.disabled = last;
+  document.getElementById("submit-btn").classList.toggle("hidden", !last);
+}
+
+document.getElementById("next-btn").addEventListener("click", () => {
+  if (qIndex < openQuiz.questions.length - 1) { qIndex++; renderQuestion(); }
+});
+
+document.getElementById("submit-btn").addEventListener("click", () => {
+  openQuiz.submitted = true;
+  const right = openQuiz.questions.reduce((n, q, i) => n + (chosen[i] === q.correct ? 1 : 0), 0);
+  const pct = Math.round((right / openQuiz.questions.length) * 100);
+  document.getElementById("result-banner").textContent = "Completed";
+  document.getElementById("score").textContent = `Score: ${pct}%`;
+  show("result-view");
+});
+
+document.getElementById("back-btn").addEventListener("click", renderList);
+
+renderList();
+</script>
+</body>
+</html>

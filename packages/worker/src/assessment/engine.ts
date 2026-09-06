@@ -102,15 +102,18 @@ class Stopped extends Error {
  * memory), and is applied by the job's own concurrency, not here.
  */
 let aiLimiter: ConcurrencyLimiter | null = null;
-let aiLimiterSize = 0;
 
 function limiterFor(concurrency: number): ConcurrencyLimiter {
-  if (!aiLimiter || aiLimiterSize !== concurrency) {
-    aiLimiter = new ConcurrencyLimiter(concurrency);
-    aiLimiterSize = concurrency;
-  }
+  // Created once and then kept, deliberately. Replacing it when the setting
+  // changes would strand anyone already queued on the OLD instance: their
+  // promises live in that object's waiting list, which nothing will ever
+  // drain again, and those sessions would hang until the process died. A
+  // concurrency change therefore takes effect on the next worker restart,
+  // which is a far better trade than a deadlock.
+  if (!aiLimiter) aiLimiter = new ConcurrencyLimiter(concurrency);
   return aiLimiter;
 }
+
 
 /**
  * Runs one person's whole assessment.
@@ -171,12 +174,16 @@ export async function runAssessment(ctx: AssessmentRunContext): Promise<Assessme
 
     // The quiz rows, in the portal's own display order — which is the order
     // a person would take them in, and the order any prerequisites assume.
+    // Deliberately carries NO list position. A quiz is addressed by its id
+    // and re-located on the page each time it is touched — keeping a
+    // remembered index here is what let an earlier version open the wrong
+    // quiz after the portal reordered its list, and keeping the field
+    // around unused would just invite that back.
     const quizRows: {
       id: string;
       externalQuizId: string;
       quizName: string;
       internalStatus: QuizStatus;
-      index: number;
     }[] = [];
 
     for (const found of discovered) {
@@ -198,7 +205,6 @@ export async function runAssessment(ctx: AssessmentRunContext): Promise<Assessme
         externalQuizId: found.externalQuizId,
         quizName: found.quizName,
         internalStatus: reconciled.internalStatus,
-        index: found.index,
       });
 
       await ctx.emit("quiz_discovered", {
@@ -307,16 +313,19 @@ type QuizOutcome = "completed" | "skipped" | "failed";
 async function runOneQuiz(
   ctx: AssessmentRunContext,
   adapter: AssessmentPortalAdapter,
-  quiz: { id: string; externalQuizId: string; quizName: string; internalStatus: QuizStatus; index: number },
+  quiz: { id: string; externalQuizId: string; quizName: string; internalStatus: QuizStatus },
   ai: {
     primary: ReturnType<typeof createProvider>;
     fallback: ReturnType<typeof createProvider> | null;
     limiter: ConcurrencyLimiter;
   },
 ): Promise<QuizOutcome> {
-  // Re-read the card rather than trusting the discovery pass: minutes may
-  // have passed, and the portal is the authority on completion.
-  const current = await adapter.readQuizStatus(quiz.index);
+  // Re-find the card by ID rather than trusting the position it held during
+  // discovery: the engine has been back and forth to this list, and a portal
+  // may reorder it (moving submitted quizzes to the bottom is common). This
+  // also re-reads the status, which is the point — minutes may have passed
+  // and the portal is the authority on completion.
+  const current = await adapter.locateQuiz(quiz.externalQuizId);
   const portalStatus = current?.portalStatus ?? "unknown";
 
   const decision = decideQuizStart({ portalStatus, internalStatus: quiz.internalStatus });
@@ -357,7 +366,12 @@ async function runOneQuiz(
   let total: number | null = null;
 
   try {
-    await adapter.openQuiz(quiz.index);
+    // If the quiz is no longer on the list at all, do NOT fall back to its
+    // old position — that is exactly how the wrong quiz gets taken.
+    if (!current) {
+      throw new Error(`"${quiz.quizName}" is no longer on the quiz list`);
+    }
+    await adapter.openQuiz(current.index);
 
     for (let n = 1; n <= MAX_QUESTIONS_PER_QUIZ; n++) {
       if (ctx.signal.aborted) throw new Stopped();
@@ -471,14 +485,42 @@ async function runOneQuiz(
       await recordQuizProgress(run.id, answered, total);
       await ctx.emit("question_completed", { quizRunId: run.id, questionNumber: n });
 
-      if (!(await adapter.hasNext())) break;
-      await adapter.goNext();
+      if (await adapter.hasNext()) {
+        await adapter.goNext();
+        continue;
+      }
+
+      // No Next control found. That legitimately means "this was the last
+      // question" — unless the portal never named one, in which case it
+      // means every quiz is submitted after question 1. Refuse rather than
+      // submit a tenth of somebody's assessment and call it a success.
+      if (!adapter.hasNextConfigured()) {
+        throw new Error(
+          `the quiz template does not define "nextSelector", so the engine cannot move past question ${n}. ` +
+            `Fill it in, or leave it blank only if every quiz really is a single question.`,
+        );
+      }
+      // It IS configured and genuinely absent — but if the portal publishes
+      // a question count, believe the count over a control that may simply
+      // not have rendered yet.
+      if (total !== null && n < total) {
+        throw new Error(
+          `the portal says this quiz has ${total} questions but no Next control was found after question ${n}`,
+        );
+      }
+      break;
     }
 
     // ---------- submit, once ----------
+    // Recorded BEFORE the click, so a worker killed mid-submit leaves a row
+    // that says exactly that. The next run still asks the portal rather
+    // than trusting this — the status makes the crash legible, it does not
+    // make the decision.
+    await updateQuizRunStatus(run.id, "submitting", { questionsAnswered: answered });
     const submission = await submitOnce(ctx, adapter, run.id);
     if (!submission.ok) throw new Error(submission.error);
 
+    await updateQuizRunStatus(run.id, "verifying");
     const { resultText, scoreText } = await adapter.waitForResult();
     const score = parseScore(scoreText ?? resultText);
     await ctx.emit("quiz_result_received", { quizRunId: run.id, resultText, scoreText, score });

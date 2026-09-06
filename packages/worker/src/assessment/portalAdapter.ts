@@ -61,9 +61,18 @@ export interface AssessmentPortalAdapter {
   openAssessmentList(): Promise<void>;
   /** Every quiz on the list, with whatever the portal says about each. */
   discoverQuizzes(): Promise<PortalQuiz[]>;
-  /** Re-read one quiz's status without opening it — the check that runs
-   * immediately before taking it, and again before any retry. */
-  readQuizStatus(index: number): Promise<PortalQuiz | null>;
+  /**
+   * Find a quiz on the CURRENT list by its id, returning its current status
+   * and its current position.
+   *
+   * Deliberately not "read the card at index N": the engine returns to the
+   * list between quizzes, and a portal is free to re-render it in a
+   * different order — moving submitted quizzes to the bottom is a common
+   * and entirely reasonable thing for one to do. Trusting the index
+   * captured during discovery would then open a different quiz than the one
+   * that was chosen, which is the worst class of bug this module can have.
+   */
+  locateQuiz(externalQuizId: string): Promise<PortalQuiz | null>;
   openQuiz(index: number): Promise<void>;
   /** The current question and the elements its options map to. */
   readQuestion(questionNumber: number): Promise<QuestionWithElements>;
@@ -71,6 +80,8 @@ export interface AssessmentPortalAdapter {
   selectOption(elements: Locator[], index: number): Promise<void>;
   /** Whether the click landed, when the portal gives us a way to tell. */
   verifySelection(elements: Locator[], index: number): Promise<boolean | null>;
+  /** Whether the portal config names a Next control at all. */
+  hasNextConfigured(): boolean;
   /** True when there is another question after this one. */
   hasNext(): Promise<boolean>;
   goNext(): Promise<void>;
@@ -135,6 +146,13 @@ export class ConfiguredPortalAdapter implements AssessmentPortalAdapter {
         timeout: Math.max(this.ctx.timeoutMs, 60_000),
       });
     }
+    await this.waitForList();
+  }
+
+  /** Wait for the list to be on screen, without navigating to it. Separate
+   * from openAssessmentList because returning to the list via the portal's
+   * own control must NOT also reload the page — see returnToList. */
+  private async waitForList(): Promise<void> {
     // Wait for the list itself where the config names one, so discovery
     // does not read an empty page that is still fetching.
     if (this.config.quizListSelector) {
@@ -198,10 +216,17 @@ export class ConfiguredPortalAdapter implements AssessmentPortalAdapter {
     return out;
   }
 
-  async readQuizStatus(index: number): Promise<PortalQuiz | null> {
+  async locateQuiz(externalQuizId: string): Promise<PortalQuiz | null> {
+    // Re-reads the list rather than trusting a remembered position — see
+    // the interface note. Costs one extra pass over the cards; buys the
+    // guarantee that we open the quiz we chose.
     const cards = this.cards();
-    if ((await cards.count()) <= index) return null;
-    return this.readCard(cards.nth(index), index);
+    const count = await cards.count();
+    for (let i = 0; i < count; i++) {
+      const card = await this.readCard(cards.nth(i), i);
+      if (card.externalQuizId === externalQuizId) return card;
+    }
+    return null;
   }
 
   async openQuiz(index: number): Promise<void> {
@@ -304,6 +329,19 @@ export class ConfiguredPortalAdapter implements AssessmentPortalAdapter {
     return isSelf;
   }
 
+  /**
+   * Whether a Next control is configured at all.
+   *
+   * Separate from hasNext() because the two mean very different things. An
+   * unconfigured Next makes hasNext() answer "no more questions" for every
+   * question, so a ten-question quiz would be submitted having answered
+   * one — silently, and looking like a success. The engine checks this and
+   * refuses instead.
+   */
+  hasNextConfigured(): boolean {
+    return Boolean(this.config.nextSelector);
+  }
+
   async hasNext(): Promise<boolean> {
     if (!this.config.nextSelector) return false;
     const next = this.page.locator(this.config.nextSelector).first();
@@ -370,15 +408,24 @@ export class ConfiguredPortalAdapter implements AssessmentPortalAdapter {
 
   async returnToList(): Promise<void> {
     if (this.config.backToListSelector) {
+      // Click the portal's own control and then WAIT — deliberately not a
+      // re-navigation afterwards. This used to click Back and then re-goto
+      // the assessment URL, which on a single-page portal reloads the app
+      // and throws away the state it had just returned to: the quiz that
+      // was submitted moments earlier reads as not-started again, and the
+      // engine would happily take it a second time. Caught by the mock
+      // portal test, which is exactly the class of bug it exists to catch.
       const loc = await waitForSelector(this.page, this.config.backToListSelector, this.ctx.timeoutMs);
       await loc.click({ timeout: this.ctx.timeoutMs });
-    } else {
-      // No explicit control: go back to where the list was. Re-navigating
-      // is more reliable than browser Back, which on a single-page portal
-      // often lands on a stale, half-rendered list.
-      const url = this.config.assessmentUrl || this.ctx.listUrl();
-      await this.page.goto(url, { waitUntil: "domcontentloaded", timeout: Math.max(this.ctx.timeoutMs, 60_000) });
+      await this.waitForList();
+      return;
     }
-    await this.openAssessmentList();
+
+    // No explicit control: go back to where the list was. Re-navigating is
+    // more reliable than browser Back, which on a single-page portal often
+    // lands on a stale, half-rendered list.
+    const url = this.config.assessmentUrl || this.ctx.listUrl();
+    await this.page.goto(url, { waitUntil: "domcontentloaded", timeout: Math.max(this.ctx.timeoutMs, 60_000) });
+    await this.waitForList();
   }
 }

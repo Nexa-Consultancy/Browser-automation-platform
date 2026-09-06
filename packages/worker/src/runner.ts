@@ -359,6 +359,28 @@ ${stepError}`,
     if (stopped) {
       await updateSessionStatus(session.id, "stopped", { finishedAt: true });
       await emitEvent(session.id, job.id, "status_change", { status: "stopped" });
+    } else if (job.kind === "assessment" && !assessmentDone) {
+      // The loop ended without the quiz engine ever running. The only way
+      // here is the script's LAST step failing: that path increments the
+      // cursor and `continue`s, so the loop exits without passing through
+      // the end-of-script block below. Reporting "completed" would be the
+      // worst outcome available — an assessment group whose login step
+      // broke would look green every single day while doing nothing.
+      const why =
+        "the task script did not finish, so the quiz engine never started — " +
+        "fix the failing step and run the group again";
+      await updateSessionStatus(session.id, "failed", { error: why, finishedAt: true });
+      await emitEvent(session.id, job.id, "assessment_failed", { error: why });
+      await emitEvent(session.id, job.id, "status_change", { status: "failed" });
+      publishAlert({
+        level: "ERROR",
+        source: "worker/assessment",
+        message: `Assessment did not start for ${session.userName}: ${why}`,
+        jobId: job.id,
+        sessionId: session.id,
+        userName: session.userName,
+        groupName: job.name,
+      });
     } else {
       await updateSessionStatus(session.id, "completed", { finishedAt: true });
       await emitEvent(session.id, job.id, "status_change", { status: "completed" });

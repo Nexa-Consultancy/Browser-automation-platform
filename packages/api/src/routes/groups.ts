@@ -213,6 +213,18 @@ async function organizationMissing(organizationId: string | null, account: strin
   return organizationId !== null && !(await getOrganization(organizationId, account));
 }
 
+/**
+ * A quiz template has to exist IN THIS WORKSPACE.
+ *
+ * Without this a group could name any template id it liked, including one
+ * belonging to another account — which would then be read, and run, as this
+ * group's portal configuration. Same shape as the organization and linked-
+ * user checks either side of it: the scoped read IS the check.
+ */
+async function assessmentTemplateMissing(templateId: string | null, account: string): Promise<boolean> {
+  return templateId !== null && !(await getTemplate(templateId, account));
+}
+
 export async function groupRoutes(app: FastifyInstance): Promise<void> {
   // Every group route is tenant data: no exceptions, so the hook is set
   // once on the whole plugin rather than per route, where a new route
@@ -246,6 +258,9 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     if ((await getUsersByIds(parsed.value.userIds, account)).length !== parsed.value.userIds.length) {
       return reply.code(400).send({ error: "one or more selected users no longer exist" });
     }
+    if (await assessmentTemplateMissing(parsed.value.assessmentTemplateId, account)) {
+      return reply.code(400).send({ error: "that quiz template no longer exists" });
+    }
 
     const group = await createGroup({
       ...parsed.value,
@@ -274,6 +289,9 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
     }
     if ((await getUsersByIds(parsed.value.userIds, account)).length !== parsed.value.userIds.length) {
       return reply.code(400).send({ error: "one or more selected users no longer exist" });
+    }
+    if (await assessmentTemplateMissing(parsed.value.assessmentTemplateId, account)) {
+      return reply.code(400).send({ error: "that quiz template no longer exists" });
     }
 
     const group = await updateGroup(id, account, {

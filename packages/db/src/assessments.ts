@@ -441,10 +441,16 @@ export async function reapStaleQuizRuns(personId: string, exceptJobId: string | 
   const { rowCount } = await pool.query(
     `UPDATE quiz_runs
         SET status = 'failed',
-            error = COALESCE(error, 'the worker running this quiz stopped before it finished'),
+            error = COALESCE(
+              error,
+              CASE status
+                WHEN 'submitting' THEN 'the worker stopped just after clicking Submit — the portal was re-checked on the next run rather than resubmitting'
+                WHEN 'verifying'  THEN 'the worker stopped while confirming the result — the portal was re-checked on the next run'
+                ELSE 'the worker running this quiz stopped before it finished'
+              END),
             completed_at = COALESCE(completed_at, now())
       WHERE person_id = $1
-        AND status IN ('queued', 'running')
+        AND status IN ('queued', 'running', 'submitting', 'verifying')
         AND ($2::uuid IS NULL OR job_id IS DISTINCT FROM $2::uuid)`,
     [personId, exceptJobId],
   );
@@ -747,6 +753,7 @@ export async function assessmentOverview(accountId: string): Promise<AssessmentO
 export async function listAssessmentPeople(
   accountId: string,
   organizationId?: string | null,
+  limit = 500,
 ): Promise<AssessmentPerson[]> {
   const params: unknown[] = [accountId];
   let orgClause = "";
@@ -754,6 +761,10 @@ export async function listAssessmentPeople(
     params.push(organizationId);
     orgClause = ` AND u.organization_id = $${params.length}`;
   }
+  // Bounded like every other list in this codebase (listUsers is LIMIT 500).
+  // An unbounded roll-up over every person in a workspace is the one query
+  // here that grows without anyone noticing.
+  params.push(Math.min(limit, 2000));
 
   const { rows } = await pool.query<{
     person_id: string;
@@ -781,7 +792,8 @@ export async function listAssessmentPeople(
        LEFT JOIN assessment_profiles p ON p.person_id = u.id
       WHERE u.account_id = $1${orgClause}
       GROUP BY u.id, u.name, u.email, u.organization_id, p.last_assessment_run, p.last_successful_run
-      ORDER BY lower(u.name)`,
+      ORDER BY lower(u.name)
+      LIMIT $${params.length}`,
     params,
   );
 

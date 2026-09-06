@@ -66,9 +66,13 @@ export async function assessmentRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/assessments/groups", async (req) => {
     const account = accountId(req);
     const groups = (await listGroups(account)).filter((g) => g.groupType === "assessment");
+    // Read once and handed down: planAssessmentRun would otherwise fetch the
+    // whole settings table per group, which is a query per row for a value
+    // that is identical across all of them.
+    const settings = await getSettings();
     const rows = await Promise.all(
       groups.map(async (g) => {
-        const plan = await planAssessmentRun(g);
+        const plan = await planAssessmentRun(g, settings);
         const linked = await getUsersByIds(g.userIds, account);
         return {
           group: g,

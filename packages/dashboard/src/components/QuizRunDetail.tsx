@@ -55,7 +55,10 @@ export function QuizRunDetail({
   // A run still going should tick, so watching one is useful rather than
   // needing a refresh to see the next question land.
   useEffect(() => {
-    if (!data || (data.run.status !== "running" && data.run.status !== "queued")) return;
+    // Poll through every non-terminal state, including submitting/verifying —
+    // those are exactly the moments somebody is watching this screen.
+    const LIVE = ["queued", "running", "submitting", "verifying"];
+    if (!data || !LIVE.includes(data.run.status)) return;
     const t = setInterval(() => void load(), 5_000);
     return () => clearInterval(t);
   }, [data, load]);

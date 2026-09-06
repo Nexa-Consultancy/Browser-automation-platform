@@ -286,6 +286,11 @@ export type QuizStatus = "discovered" | "pending" | "in_progress" | "completed" 
 export type QuizRunStatus =
   | "queued"
   | "running"
+  /** Submit has been clicked and we do not yet know whether it landed — the
+   * one state a crash is genuinely dangerous in, so it is named. */
+  | "submitting"
+  /** Submitted, waiting for the portal to show the result. */
+  | "verifying"
   | "completed"
   | "failed"
   | "stopped"

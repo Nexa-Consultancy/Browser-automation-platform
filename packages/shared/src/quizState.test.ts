@@ -18,7 +18,7 @@ import {
   selectNextQuiz,
   summarizeQuizzes,
 } from "./quizState.js";
-import { QUIZ_RUN_STATUSES } from "./assessmentTypes.js";
+import { QUIZ_RUN_STATUSES, type QuizStatus } from "./assessmentTypes.js";
 import { portalConfigReadiness, parsePortalConfig } from "./portalConfig.js";
 
 const RULES = { completedText: ["submitted", "completed"], pendingText: ["not completed", "not started"] };
@@ -136,12 +136,9 @@ describe("decideQuizStart — idempotency", () => {
     // The dangerous sequence: submit lands, the worker dies before the
     // write, the job is retried. Our record still says in_progress. The
     // portal now says completed, and that has to win.
-    const d = decideQuizStart({
-      portalStatus: "completed",
-      internalStatus: "in_progress",
-      unfinishedRun: { status: "running", questionsAnswered: 7 },
-    });
+    const d = decideQuizStart({ portalStatus: "completed", internalStatus: "in_progress" });
     assert.equal(d.action, "skip");
+    if (d.action === "skip") assert.equal(d.status, "already_completed");
   });
 
   it("trusts our own completed record only when the portal publishes nothing", () => {
@@ -185,6 +182,97 @@ describe("canRetrySubmit — never submit twice", () => {
   });
 });
 
+/**
+ * The four ways a browser can die around a submission, walked as sequences.
+ *
+ * Each one asks the same question the engine asks — "what does the portal
+ * say NOW?" — because that is the only answer that is trustworthy after a
+ * crash. Our own record is, by definition, the thing that may not have been
+ * written.
+ */
+describe("crash scenarios around Submit", () => {
+  it("crash BEFORE submit: the portal is unchanged, so the quiz is taken", () => {
+    // The worker died mid-quiz. Nothing was submitted, so the portal still
+    // reports it not-started and our row was left mid-flight.
+    const decision = decideQuizStart({ portalStatus: "not_started", internalStatus: "in_progress" });
+    assert.equal(decision.action, "take");
+  });
+
+  it("crash AFTER submit but before we wrote it down: the quiz is NOT retaken", () => {
+    // The dangerous one. Our record says in_progress because the write never
+    // happened; the portal says submitted, and the portal wins.
+    const decision = decideQuizStart({ portalStatus: "completed", internalStatus: "in_progress" });
+    assert.equal(decision.action, "skip");
+    if (decision.action === "skip") assert.equal(decision.status, "already_completed");
+  });
+
+  it("crash during submit, result DETECTED on re-check: not resubmitted", () => {
+    const verdict = canRetrySubmit({ resultDetected: true, stateKnown: true, attempts: 1, maxAttempts: 2 });
+    assert.equal(verdict.retry, false);
+    assert.match(verdict.reason, /already submitted/);
+  });
+
+  it("crash during submit, result NOT detected and state readable: safe to retry", () => {
+    const verdict = canRetrySubmit({ resultDetected: false, stateKnown: true, attempts: 1, maxAttempts: 2 });
+    assert.equal(verdict.retry, true);
+  });
+
+  it("crash during submit, state UNREADABLE: refuses to retry", () => {
+    // "I could not tell" is treated as "it may have gone through".
+    const verdict = canRetrySubmit({ resultDetected: false, stateKnown: false, attempts: 1, maxAttempts: 2 });
+    assert.equal(verdict.retry, false);
+  });
+
+  it("an already-completed quiz is never opened in the first place", () => {
+    const rows = [
+      { externalQuizId: "done", internalStatus: "completed" as const },
+      { externalQuizId: "todo", internalStatus: "pending" as const },
+    ];
+    // Settled at discovery — decideQuizStart is never even reached for it.
+    assert.equal(selectNextQuiz(rows)?.externalQuizId, "todo");
+  });
+});
+
+/**
+ * Several people sitting the same assessment.
+ *
+ * Their state is keyed per person all the way down, so one person finishing
+ * a quiz must not make it look finished for anybody else — the mistake that
+ * would silently skip an assessment for a whole group.
+ */
+describe("multi-user isolation", () => {
+  const quizzesFor = (done: string[]) =>
+    [
+      { externalQuizId: "alpha", internalStatus: (done.includes("alpha") ? "completed" : "pending") as QuizStatus },
+      { externalQuizId: "bravo", internalStatus: (done.includes("bravo") ? "completed" : "pending") as QuizStatus },
+    ];
+
+  it("each person is offered what THEY have left", () => {
+    assert.equal(selectNextQuiz(quizzesFor([]))?.externalQuizId, "alpha");
+    assert.equal(selectNextQuiz(quizzesFor(["alpha"]))?.externalQuizId, "bravo");
+    assert.equal(selectNextQuiz(quizzesFor(["alpha", "bravo"])), null);
+  });
+
+  it("one person's totals say nothing about another's", () => {
+    const ahead = summarizeQuizzes(quizzesFor(["alpha", "bravo"]).map((q) => ({ internalStatus: q.internalStatus, score: 90 })));
+    const behind = summarizeQuizzes(quizzesFor([]).map((q) => ({ internalStatus: q.internalStatus, score: null })));
+    assert.equal(ahead.completedQuizzes, 2);
+    assert.equal(behind.completedQuizzes, 0);
+    assert.equal(behind.pendingQuizzes, 2);
+    assert.equal(ahead.averageScore, 90);
+    assert.equal(behind.averageScore, null);
+  });
+
+  it("the same portal quiz reconciles independently per person", () => {
+    const card = { externalQuizId: "alpha", quizName: "Fire Safety", portalStatus: "unknown" as const };
+    // Person 1 has done it; person 2 has not. Same card, same run.
+    const p1 = reconcileQuizStatus(card, { externalQuizId: "alpha", internalStatus: "completed", portalStatus: "unknown" });
+    const p2 = reconcileQuizStatus(card, { externalQuizId: "alpha", internalStatus: "pending", portalStatus: "unknown" });
+    assert.equal(p1.internalStatus, "completed");
+    assert.equal(p2.internalStatus, "pending");
+  });
+});
+
 describe("quiz run state transitions", () => {
   it("moves forward through the normal path", () => {
     assert.equal(canTransitionQuizRun("queued", "running"), true);
@@ -204,6 +292,27 @@ describe("quiz run state transitions", () => {
 
   it("cannot skip straight from queued to completed", () => {
     assert.equal(canTransitionQuizRun("queued", "completed"), false);
+  });
+
+  it("walks running -> submitting -> verifying -> completed", () => {
+    assert.equal(canTransitionQuizRun("running", "submitting"), true);
+    assert.equal(canTransitionQuizRun("submitting", "verifying"), true);
+    assert.equal(canTransitionQuizRun("verifying", "completed"), true);
+  });
+
+  it("never re-enters the question loop once Submit has been clicked", () => {
+    // The transition that would let a possibly-submitted quiz be answered
+    // and submitted a second time.
+    assert.equal(canTransitionQuizRun("submitting", "running"), false);
+    assert.equal(canTransitionQuizRun("verifying", "running"), false);
+    assert.equal(canTransitionQuizRun("verifying", "submitting"), false);
+  });
+
+  it("lets a crashed submit be closed out either way", () => {
+    // The reaper marks it failed; the portal decides the truth next run.
+    assert.equal(canTransitionQuizRun("submitting", "failed"), true);
+    assert.equal(canTransitionQuizRun("submitting", "already_completed"), true);
+    assert.equal(canTransitionQuizRun("submitting", "completed"), true);
   });
 });
 

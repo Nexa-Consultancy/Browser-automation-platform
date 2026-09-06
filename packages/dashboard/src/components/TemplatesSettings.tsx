@@ -229,12 +229,21 @@ function TemplateModal({
                         type="button"
                         className={templateType === t ? "active" : ""}
                         onClick={() => chooseType(t)}
+                        title={
+                          t === "typescript"
+                            ? "Advanced template definition. Saved and validated, but not executed by this build."
+                            : "Executable — a group can run this."
+                        }
                       >
                         {TEMPLATE_TYPE_LABELS[t]}
                       </button>
                     ))}
                   </div>
                 )}
+                <div className="hint">
+                  Plain-English and JSON are <strong>executable</strong>. TypeScript is an advanced template
+                  definition: it is saved, validated and inspectable, but this build does not execute it.
+                </div>
               </div>
 
               <div className="form-row">
@@ -440,6 +449,13 @@ export function TemplatesSettings() {
         ))}
       </div>
 
+      {filter === "typescript" && (
+        <div className="editor-status warn" style={{ marginBottom: 14 }}>
+          TypeScript templates are advanced definitions — saved, validated and inspectable, but not executed by
+          this build. A group cannot be pointed at one. Use Plain-English or JSON for anything that has to run.
+        </div>
+      )}
+
       {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
 
       {loaded && templates.length === 0 && <div className="empty-state">No templates yet.</div>}
@@ -475,6 +491,22 @@ export function TemplatesSettings() {
                   ? "TypeScript source"
                   : `${t.steps.length} step${t.steps.length === 1 ? "" : "s"}`}
               </span>
+              {/* Said on the card, not only inside the editor: the list is
+                  where somebody decides which template to point a group at,
+                  and a definition that cannot run must not look like one
+                  that can. */}
+              {t.templateType === "typescript" ? (
+                <span
+                  className="mini-chip"
+                  title="Definitions are saved and validated. This build cannot execute TypeScript — use Plain-English or JSON for anything that has to run."
+                >
+                  definition only · not executable
+                </span>
+              ) : (
+                <span className="mini-chip on" title="This template can be run by a group.">
+                  executable
+                </span>
+              )}
               {t.assessment && <span className="mini-chip on">quiz selectors</span>}
               {t.id === AUTO_LOGIN_TEMPLATE_ID && <span className="hint">seeded sign-in script</span>}
             </div>

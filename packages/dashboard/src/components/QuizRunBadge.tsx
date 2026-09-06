@@ -12,6 +12,8 @@ import type { QuizRunStatus, QuizStatus } from "../types";
 const RUN_LABELS: Record<QuizRunStatus, string> = {
   queued: "queued",
   running: "running",
+  submitting: "submitting",
+  verifying: "checking result",
   completed: "completed",
   failed: "failed",
   stopped: "stopped",
@@ -24,6 +26,8 @@ const RUN_LABELS: Record<QuizRunStatus, string> = {
 const RUN_TONE: Record<QuizRunStatus, string> = {
   queued: "pending",
   running: "running",
+  submitting: "running",
+  verifying: "running",
   completed: "completed",
   failed: "failed",
   stopped: "stopped",

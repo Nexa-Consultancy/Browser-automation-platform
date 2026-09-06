@@ -96,18 +96,6 @@ export async function getTemplate(id: string, accountId: string): Promise<StepTe
   return rows[0] ? toTemplate(rows[0]) : null;
 }
 
-/**
- * Unscoped lookup, for the paths that already hold the id and have no
- * account of their own — the group scheduler, and the assessment launch
- * plan it shares with "Join now". Same convention (and same naming) as
- * getGroupUnscoped, so reaching for it from a request handler looks as
- * wrong as it would be.
- */
-export async function getTemplateUnscoped(id: string): Promise<StepTemplate | null> {
-  const { rows } = await pool.query<TemplateDbRow>(`SELECT * FROM step_templates WHERE id = $1`, [id]);
-  return rows[0] ? toTemplate(rows[0]) : null;
-}
-
 /** The template that should be used when nobody picks one — a new group's
  * Task, or the sign-in script for a new user. */
 export async function getDefaultTemplate(accountId: string, scope: TemplateScope): Promise<StepTemplate | null> {

@@ -142,7 +142,13 @@ export function selectNextQuiz(
  */
 const ALLOWED_TRANSITIONS: Record<QuizRunStatus, QuizRunStatus[]> = {
   queued: ["running", "skipped", "already_completed", "failed", "stopped"],
-  running: ["completed", "failed", "stopped", "already_completed"],
+  running: ["submitting", "completed", "failed", "stopped", "already_completed"],
+  // Submit has been clicked. It may or may not have landed, so both the
+  // "it did" and "it did not" exits are legal from here — but "back to
+  // running" is not, because re-entering the question loop after a possible
+  // submission is how a quiz gets answered twice.
+  submitting: ["verifying", "completed", "failed", "stopped", "already_completed"],
+  verifying: ["completed", "failed", "stopped", "already_completed"],
   completed: [],
   failed: [],
   stopped: [],
@@ -166,9 +172,6 @@ export interface StartDecisionInput {
   portalStatus: PortalQuizStatus;
   /** Our stored status for it. */
   internalStatus: QuizStatus;
-  /** A previous run of this same quiz for this same person that never
-   * reached a terminal status — i.e. a worker died mid-quiz. */
-  unfinishedRun?: { status: QuizRunStatus; questionsAnswered: number } | null;
 }
 
 export type StartDecision =

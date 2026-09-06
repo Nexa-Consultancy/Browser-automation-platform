@@ -12,7 +12,7 @@
  * minutes later.
  */
 
-import { getSettings, getTemplateUnscoped } from "@automation/db";
+import { getSettings, getTemplate } from "@automation/db";
 import {
   TS_TEMPLATE_NOT_EXECUTABLE,
   aiConfigReadiness,
@@ -41,7 +41,13 @@ export type AssessmentPlanResult = { ok: true; plan: AssessmentPlan } | { ok: fa
  * then flails at a page it cannot read. Refusing up front is the kinder
  * failure by a wide margin.
  */
-export async function planAssessmentRun(group: Group): Promise<AssessmentPlanResult> {
+export async function planAssessmentRun(
+  group: Group,
+  /** Passed in by callers that already loaded it (the groups list resolves
+   * several groups in one request), so settings are read once per request
+   * rather than once per group. */
+  preloadedSettings?: Record<string, string>,
+): Promise<AssessmentPlanResult> {
   if (!group.assessmentTemplateId) {
     return {
       ok: false,
@@ -49,9 +55,20 @@ export async function planAssessmentRun(group: Group): Promise<AssessmentPlanRes
     };
   }
 
-  // Unscoped: the scheduler has no account of its own, and the group
-  // already names the workspace the template must belong to (checked below).
-  const template = await getTemplateUnscoped(group.assessmentTemplateId);
+  // A group with no workspace cannot file results against one, and cannot
+  // have its template ownership checked either. phase.ts refuses the same
+  // case in the worker; refusing it here means it never gets that far.
+  if (!group.accountId) {
+    return { ok: false, error: "this group has no workspace, so its assessment results could not be filed" };
+  }
+
+  // SCOPED to the group's own workspace. This lookup used to be unscoped,
+  // with a comment claiming the ownership was "checked below" — it was not.
+  // A group could name another account's template id and quietly read (and
+  // run) that workspace's portal configuration. The group already carries
+  // the account the template must belong to, so the scoped read is both the
+  // correct lookup and the check.
+  const template = await getTemplate(group.assessmentTemplateId, group.accountId);
   if (!template) {
     return { ok: false, error: "this group's quiz template no longer exists" };
   }
@@ -74,7 +91,7 @@ export async function planAssessmentRun(group: Group): Promise<AssessmentPlanRes
     };
   }
 
-  const settings = await getSettings();
+  const settings = preloadedSettings ?? (await getSettings());
   const ai = aiConfigReadiness(readAssessmentAIConfig(settings));
   if (!ai.ready) {
     return { ok: false, error: `assessment AI is not ready: ${ai.missing.join("; ")}` };

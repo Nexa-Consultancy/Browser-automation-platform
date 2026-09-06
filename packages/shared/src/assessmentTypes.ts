@@ -69,6 +69,13 @@ export const PORTAL_QUIZ_STATUSES: PortalQuizStatus[] = ["unknown", "not_started
 export type QuizRunStatus =
   | "queued"
   | "running"
+  /** The Submit click has been issued and we do not yet know whether it
+   * landed. This is the one state a crash is genuinely dangerous in, so it
+   * gets its own name: a run found here after a restart tells the next run
+   * exactly where to look, instead of leaving it to infer from "running". */
+  | "submitting"
+  /** Submitted, waiting for the portal to show the result. */
+  | "verifying"
   | "completed"
   | "failed"
   | "stopped"
@@ -78,6 +85,8 @@ export type QuizRunStatus =
 export const QUIZ_RUN_STATUSES: QuizRunStatus[] = [
   "queued",
   "running",
+  "submitting",
+  "verifying",
   "completed",
   "failed",
   "stopped",
