@@ -3,6 +3,21 @@ export * from "./stepParser.js";
 export * from "./csv.js";
 export * from "./time.js";
 
+// ---------- Assignments module ----------
+// Template formats (the normalized-workflow layer), the assessment domain,
+// and the AI seam. All additive: nothing above this line changed shape.
+export * from "./templateTypes.js";
+export * from "./jsonWorkflow.js";
+export * from "./tsTemplate.js";
+export * from "./portalConfig.js";
+export * from "./assessmentTypes.js";
+export * from "./quizState.js";
+export * from "./questionPayload.js";
+export * from "./aiAnswer.js";
+export * from "./aiConfig.js";
+export * from "./aiProviders.js";
+export * from "./aiRouter.js";
+
 /** A one-user run whose profile is a specific PlatformUser's own persistent
  * dir (see the worker's profilePlanFor). Auto-fills email/password, then
  * stops for the operator to finish "Stay signed in?"/2FA by hand via the

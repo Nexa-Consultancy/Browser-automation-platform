@@ -19,6 +19,7 @@ import {
 } from "@automation/shared";
 import { raiseAlert } from "./alerts.js";
 import { launchJob, stopJob } from "./services/launch.js";
+import { planAssessmentRun } from "./services/assessments.js";
 
 const TICK_MS = Number(process.env.GROUP_SCHEDULER_TICK_MS ?? 20_000);
 
@@ -158,6 +159,23 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
       return;
     }
 
+    // An assessment group runs on this same schedule — the same window,
+    // days, lead and timezone — but it must be configured first. A missing
+    // template or an unconfigured portal consumes the occurrence and alerts
+    // once, exactly like an empty roster does above, rather than retrying
+    // the same misconfiguration every 20 seconds for the whole window.
+    let assessment = null;
+    let concurrencyLimit: number | undefined;
+    if (group.groupType === "assessment") {
+      const plan = await planAssessmentRun(group);
+      if (!plan.ok) {
+        await abandonOccurrence(group, state.occurrenceKey!, log, plan.error);
+        return;
+      }
+      assessment = plan.plan.assessment;
+      concurrencyLimit = plan.plan.browserConcurrency;
+    }
+
     let job: { id: string };
     try {
       ({ job } = await launchJob({
@@ -167,6 +185,9 @@ async function evaluateGroup(group: Group, log: Logger): Promise<void> {
         users,
         accountId: group.accountId,
         groupId: group.id,
+        kind: group.groupType === "assessment" ? "assessment" : "automation",
+        assessment,
+        concurrencyLimit,
       }));
     } catch (err) {
       // Without consuming the occurrence a failing launch is retried every

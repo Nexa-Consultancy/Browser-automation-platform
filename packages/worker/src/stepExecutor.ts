@@ -1,6 +1,6 @@
 import type { Locator, Page } from "playwright";
 import { applyTemplate, type ParsedStep } from "@automation/shared";
-import { resolveClickable, resolveField } from "./locators.js";
+import { resolveClickable, resolveField, type Target } from "./locators.js";
 import { waitForVideoToEnd } from "./waitForVideo.js";
 import { assertSafeNavigationTarget } from "./urlSafety.js";
 
@@ -16,6 +16,19 @@ export interface StepContext {
 }
 
 const t = (s: string, row: Record<string, string>) => applyTemplate(s, row);
+
+/**
+ * The target a step should be resolved by.
+ *
+ * A JSON step carries an ordered list of hints (`targets`); an English one
+ * has just the single value it was written with. Templating is applied to
+ * every hint, so `{{...}}` works the same in both formats.
+ */
+function targetOf(step: { target?: string; field?: string; targets?: string[] }, row: Record<string, string>): Target {
+  const single = step.target ?? step.field ?? "";
+  if (!step.targets || step.targets.length <= 1) return t(single, row);
+  return step.targets.map((hint) => t(hint, row));
+}
 
 /**
  * Errors that mean "the page moved under us", as opposed to "this element
@@ -89,7 +102,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "click": {
-      const target = t(step.target, ctx.row);
+      const target = targetOf(step, ctx.row);
       await resolveAndAct(
         () => resolveClickable(page, target, ctx.timeoutMs),
         (loc) => loc.click({ timeout: ctx.timeoutMs }),
@@ -103,7 +116,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
       // show up," so it must fail fast, not eat the full action timeout.
       const PROBE_MS = 3000;
       try {
-        const loc = await resolveClickable(page, t(step.target, ctx.row), PROBE_MS);
+        const loc = await resolveClickable(page, targetOf(step, ctx.row), PROBE_MS);
         await loc.click({ timeout: PROBE_MS });
       } catch {
         // Not present — that's fine, this step is optional.
@@ -112,7 +125,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "fill": {
-      const field = t(step.field, ctx.row);
+      const field = targetOf(step, ctx.row);
       const value = t(step.value, ctx.row);
       await resolveAndAct(
         () => resolveField(page, field, ctx.timeoutMs),
@@ -124,7 +137,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     case "fill_if_visible": {
       const PROBE_MS = 3000;
       try {
-        const loc = await resolveField(page, t(step.field, ctx.row), PROBE_MS);
+        const loc = await resolveField(page, targetOf(step, ctx.row), PROBE_MS);
         await fillField(loc, t(step.value, ctx.row), PROBE_MS);
       } catch {
         // Not present — that's fine, this step is optional.
@@ -137,7 +150,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
       return;
 
     case "select": {
-      const loc = await resolveField(page, t(step.field, ctx.row), ctx.timeoutMs);
+      const loc = await resolveField(page, targetOf(step, ctx.row), ctx.timeoutMs);
       const option = t(step.option, ctx.row);
       try {
         await loc.selectOption({ label: option }, { timeout: ctx.timeoutMs });
@@ -148,7 +161,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "check": {
-      const field = t(step.field, ctx.row);
+      const field = targetOf(step, ctx.row);
       await resolveAndAct(
         () => resolveField(page, field, ctx.timeoutMs),
         (loc) => loc.check({ timeout: ctx.timeoutMs }),
@@ -157,7 +170,7 @@ export async function executeStep(page: Page, step: ParsedStep, ctx: StepContext
     }
 
     case "uncheck": {
-      const field = t(step.field, ctx.row);
+      const field = targetOf(step, ctx.row);
       await resolveAndAct(
         () => resolveField(page, field, ctx.timeoutMs),
         (loc) => loc.uncheck({ timeout: ctx.timeoutMs }),

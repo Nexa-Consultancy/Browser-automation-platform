@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as api from "../api";
 import { TemplatesSettings } from "./TemplatesSettings";
 import { AccountsSettings } from "./AccountsSettings";
+import { AssessmentAISettings } from "./AssessmentAISettings";
 import type { SessionAccount } from "../types";
 import { setDeveloperView, useDeveloperView } from "../developerView";
 
@@ -29,7 +30,7 @@ function Field({
   );
 }
 
-type Tab = "templates" | "accounts" | "integrations" | "advanced";
+type Tab = "templates" | "accounts" | "integrations" | "assessment" | "advanced";
 
 export function SettingsView({ account }: { account: SessionAccount }) {
   const developerView = useDeveloperView();
@@ -151,6 +152,7 @@ export function SettingsView({ account }: { account: SessionAccount }) {
     { id: "templates", label: "Templates" },
     ...(account.role === "admin" ? [{ id: "accounts" as Tab, label: "Accounts" }] : []),
     { id: "integrations", label: "Integrations" },
+    { id: "assessment", label: "Assessment AI" },
     { id: "advanced", label: "Advanced" },
   ];
 
@@ -159,11 +161,11 @@ export function SettingsView({ account }: { account: SessionAccount }) {
       <div className="job-toolbar">
         <div className="job-toolbar-title">
           <h2>Settings</h2>
-          {tab !== "templates" && tab !== "accounts" && (
+          {tab !== "templates" && tab !== "accounts" && tab !== "assessment" && (
             <span className="hint">Applies to every run — scheduled and one-off.</span>
           )}
         </div>
-        {tab !== "templates" && tab !== "accounts" && (
+        {tab !== "templates" && tab !== "accounts" && tab !== "assessment" && (
           <div className="job-toolbar-actions">
             <button className="primary" onClick={save} disabled={saving}>
               {saving ? "Saving…" : "Save settings"}
@@ -196,6 +198,8 @@ export function SettingsView({ account }: { account: SessionAccount }) {
           {tab === "templates" && <TemplatesSettings />}
 
           {tab === "accounts" && <AccountsSettings currentAccountId={account.id} />}
+
+          {tab === "assessment" && <AssessmentAISettings />}
 
           {tab === "integrations" && (
             <div className="settings-grid">

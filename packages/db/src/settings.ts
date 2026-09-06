@@ -1,3 +1,4 @@
+import { ASSESSMENT_AI_SECRET_KEYS, ASSESSMENT_AI_SETTING_DEFAULTS } from "@automation/shared";
 import { pool } from "./pool.js";
 
 export type SettingsMap = Record<string, string>;
@@ -39,10 +40,22 @@ export const SETTING_DEFAULTS: SettingsMap = {
   VIEWPORT_WIDTH: "1280",
   VIEWPORT_HEIGHT: "720",
   PERSIST_PROFILES: "true",
+  // --- Assessment AI (the Assignments module) ---
+  // Spread in rather than listed here so the shape and the code that reads
+  // it stay in one file (packages/shared/src/aiConfig.ts). An API key is
+  // handled exactly like the proxy and SMTP passwords above: whitelisted,
+  // redacted on read, and "leave it alone" when sent back blank.
+  ...ASSESSMENT_AI_SETTING_DEFAULTS,
 };
 
 /** Keys whose values must never be sent back to the browser. */
-export const SECRET_KEYS = new Set(["PROXY_PASS", "SMTP_PASS", "DISCORD_WEBHOOK_URL", "TELEGRAM_BOT_TOKEN"]);
+export const SECRET_KEYS = new Set([
+  "PROXY_PASS",
+  "SMTP_PASS",
+  "DISCORD_WEBHOOK_URL",
+  "TELEGRAM_BOT_TOKEN",
+  ...ASSESSMENT_AI_SECRET_KEYS,
+]);
 
 export async function getSettings(): Promise<SettingsMap> {
   const { rows } = await pool.query<{ key: string; value: string }>(`SELECT key, value FROM settings`);

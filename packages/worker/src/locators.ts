@@ -104,66 +104,97 @@ async function waitThenPrefer(candidates: Locator[], timeoutMs: number, describe
   );
 }
 
-/** Waits for an explicitly-written selector, preferring a visible match over
+/**
+ * Waits for an explicitly-written selector, preferring a visible match over
  * whichever copy happens to come first in the DOM — same reasoning as
- * waitThenPrefer, which a single-strategy selector needs just as much. */
-async function waitForSelector(page: Page, selector: string, timeoutMs: number): Promise<Locator> {
+ * waitThenPrefer, which a single-strategy selector needs just as much.
+ *
+ * Exported for the assessment engine, whose portal config is a set of
+ * literal selectors: routing those through the same wait is what gives a
+ * quiz page the same "prefer the visible copy" behaviour every step
+ * already gets, rather than a bare `page.locator()` that would happily
+ * settle on a hidden duplicate.
+ */
+export async function waitForSelector(page: Page, selector: string, timeoutMs: number): Promise<Locator> {
   return waitThenPrefer([page.locator(selector)], timeoutMs, `an element matching "${selector}"`);
+}
+
+/**
+ * A target may be one hint or several.
+ *
+ * A plain-English step has exactly one; a JSON template's `strategies` list
+ * has several, in the author's order of preference. Both end up here, and
+ * the several-hint case is handled by concatenating each hint's candidate
+ * locators in order — so the existing "poll every candidate, prefer the
+ * first visible one" wait does the work, rather than a second resolution
+ * engine existing for the sake of one template format.
+ */
+export type Target = string | string[];
+
+function hintsOf(target: Target): string[] {
+  const list = (Array.isArray(target) ? target : [target]).map((t) => (t ?? "").trim()).filter(Boolean);
+  return list.length > 0 ? list : [""];
+}
+
+function describeTarget(target: Target): string {
+  const hints = hintsOf(target);
+  return hints.length === 1 ? `"${hints[0]}"` : `any of ${hints.map((h) => `"${h}"`).join(", ")}`;
+}
+
+/** Every way one hint might be found, in the order a human would try them. */
+function clickableCandidates(page: Page, target: string): Locator[] {
+  if (looksLikeSelector(target)) return [page.locator(target)];
+  return [
+    page.getByRole("button", { name: target, exact: false }),
+    page.getByRole("link", { name: target, exact: false }),
+    page.getByRole("menuitem", { name: target, exact: false }),
+    // A meeting's "Join now" is frequently a plain <div role="none"> with
+    // an aria-label rather than a real button, so the accessible-name
+    // strategies above never see it.
+    page.locator(`[aria-label*="${quoteAttr(target)}" i]`),
+    page.getByLabel(target, { exact: false }),
+    // Icon-only toggles (e.g. a camera/mic switch with no visible text and
+    // no aria-label) often carry only a `title` tooltip as their name —
+    // ARIA's own last-resort accessible-name source, but one neither
+    // getByRole nor getByLabel picks up in Playwright.
+    page.getByTitle(target, { exact: false }),
+    page.getByText(target, { exact: false }),
+  ];
 }
 
 /** Resolves a "click <thing>" target: explicit selectors pass through,
  * everything else is tried as a button, then a link, then a menu item, then
  * a label, then a tooltip title, then any visible text — waiting for
  * whichever appears first. */
-export async function resolveClickable(page: Page, target: string, timeoutMs: number): Promise<Locator> {
-  if (looksLikeSelector(target)) return waitForSelector(page, target, timeoutMs);
+export async function resolveClickable(page: Page, target: Target, timeoutMs: number): Promise<Locator> {
+  const candidates = hintsOf(target).flatMap((hint) => clickableCandidates(page, hint));
+  return waitThenPrefer(candidates, timeoutMs, `a clickable element matching ${describeTarget(target)}`);
+}
 
-  return waitThenPrefer(
-    [
-      page.getByRole("button", { name: target, exact: false }),
-      page.getByRole("link", { name: target, exact: false }),
-      page.getByRole("menuitem", { name: target, exact: false }),
-      // A meeting's "Join now" is frequently a plain <div role="none"> with
-      // an aria-label rather than a real button, so the accessible-name
-      // strategies above never see it.
-      page.locator(`[aria-label*="${quoteAttr(target)}" i]`),
-      page.getByLabel(target, { exact: false }),
-      // Icon-only toggles (e.g. a camera/mic switch with no visible text and
-      // no aria-label) often carry only a `title` tooltip as their name —
-      // ARIA's own last-resort accessible-name source, but one neither
-      // getByRole nor getByLabel picks up in Playwright.
-      page.getByTitle(target, { exact: false }),
-      page.getByText(target, { exact: false }),
-    ],
-    timeoutMs,
-    `a clickable element matching "${target}"`,
-  );
+function fieldCandidates(page: Page, field: string): Locator[] {
+  if (looksLikeSelector(field)) return [page.locator(field)];
+  return [
+    page.getByLabel(field, { exact: false }),
+    page.getByPlaceholder(field, { exact: false }),
+    page.locator(`[name="${quoteAttr(field)}"]`),
+    // Matched as an attribute rather than `#id` on purpose: CSS.escape is
+    // a browser API and is undefined in Node, so the `#${CSS.escape(...)}`
+    // form threw ReferenceError before it ever reached Playwright — which
+    // made every `fill`/`select`/`check` on a plain field name fail with a
+    // message that had nothing to do with the page.
+    page.locator(`[id="${quoteAttr(field)}"]`),
+    page.locator(`[aria-label*="${quoteAttr(field)}" i]`),
+    page.getByRole("textbox", { name: field, exact: false }),
+    page.getByRole("combobox", { name: field, exact: false }),
+    page.getByRole("checkbox", { name: field, exact: false }),
+  ];
 }
 
 /** Resolves a form field for "fill/select/check <field>" by label,
  * placeholder, name, id, or role — in that order of how a human would
  * describe a field — waiting for it to appear rather than giving up on a
  * page that is still rendering. */
-export async function resolveField(page: Page, field: string, timeoutMs: number): Promise<Locator> {
-  if (looksLikeSelector(field)) return waitForSelector(page, field, timeoutMs);
-
-  return waitThenPrefer(
-    [
-      page.getByLabel(field, { exact: false }),
-      page.getByPlaceholder(field, { exact: false }),
-      page.locator(`[name="${quoteAttr(field)}"]`),
-      // Matched as an attribute rather than `#id` on purpose: CSS.escape is
-      // a browser API and is undefined in Node, so the `#${CSS.escape(...)}`
-      // form threw ReferenceError before it ever reached Playwright — which
-      // made every `fill`/`select`/`check` on a plain field name fail with a
-      // message that had nothing to do with the page.
-      page.locator(`[id="${quoteAttr(field)}"]`),
-      page.locator(`[aria-label*="${quoteAttr(field)}" i]`),
-      page.getByRole("textbox", { name: field, exact: false }),
-      page.getByRole("combobox", { name: field, exact: false }),
-      page.getByRole("checkbox", { name: field, exact: false }),
-    ],
-    timeoutMs,
-    `a field matching "${field}"`,
-  );
+export async function resolveField(page: Page, field: Target, timeoutMs: number): Promise<Locator> {
+  const candidates = hintsOf(field).flatMap((hint) => fieldCandidates(page, hint));
+  return waitThenPrefer(candidates, timeoutMs, `a field matching ${describeTarget(field)}`);
 }

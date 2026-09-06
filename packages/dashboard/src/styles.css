@@ -2167,3 +2167,278 @@ button.big { padding: 11px 20px; font-size: 14px; }
 @media (max-width: 640px) {
   .step-ref-row { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ============================================================
+   Assignments — the Assessment / Quiz module.
+
+   Nothing new is invented here. Every rule below is built out of the
+   tokens and shapes the rest of the app already uses: the same panel and
+   line colours, the same one blue accent for anything live or selected,
+   the same mono for anything machine-written, the same badge/pill grammar.
+   A quiz status looks like a session status because it IS the same idea.
+   ============================================================ */
+
+/* ---------- segmented pickers: template type, group type, subsection ----------
+   The same shape as .app-tabs and .day-chip — a row of buttons where the
+   chosen one carries the accent — because the app already says "one of
+   these" that way. */
+.type-filter,
+.type-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.type-filter {
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.type-filter-label {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-right: 6px;
+}
+
+.type-filter button,
+.type-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.type-filter button:hover:not(.active),
+.type-picker button:hover:not(.active) {
+  color: var(--text);
+  border-color: var(--line);
+}
+
+.type-filter button.active,
+.type-picker button.active {
+  color: var(--live);
+  border-color: rgba(29, 100, 216, 0.35);
+  background: rgba(29, 100, 216, 0.08);
+  font-weight: 600;
+}
+
+/* The count rides inside the button rather than beside it, so the row
+   stays one line of controls instead of a table. */
+.type-filter button .count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: var(--panel-2);
+  border-radius: 9px;
+  padding: 1px 6px;
+}
+.type-filter button.active .count {
+  color: var(--live);
+  background: rgba(29, 100, 216, 0.12);
+}
+
+/* ---------- template cards ---------- */
+.template-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+.template-type-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 4px;
+  padding: 2px 7px;
+}
+/* One accent, used for the two formats that are code — enough to tell them
+   apart at a glance without inventing a colour per format. */
+.template-type-badge.type-json,
+.template-type-badge.type-typescript {
+  color: var(--live);
+  border-color: rgba(29, 100, 216, 0.35);
+  background: rgba(29, 100, 216, 0.07);
+}
+
+.type-locked { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.type-locked .hint { margin-top: 0; flex: 1 1 260px; }
+
+/* ---------- code editors ----------
+   A textarea, deliberately: a reliable box that pastes, wraps and scrolls
+   beats a half-built IDE, and the validation that matters happens on the
+   server either way. */
+textarea.code-editor {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+  background: var(--panel-2);
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+/* One line of feedback under an editor. Same three signal colours the rest
+   of the app uses for the same three meanings. */
+.editor-status {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  margin-top: 7px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.editor-status.ok {
+  color: var(--success);
+  border-color: rgba(6, 122, 78, 0.35);
+  background: rgba(6, 122, 78, 0.06);
+}
+.editor-status.bad {
+  color: var(--danger);
+  border-color: rgba(192, 38, 59, 0.35);
+  background: rgba(192, 38, 59, 0.05);
+}
+.editor-status.warn {
+  color: #8a5a00;
+  border-color: rgba(180, 120, 0, 0.35);
+  background: rgba(180, 120, 0, 0.07);
+}
+
+/* ---------- portal config editor ----------
+   Two columns on a wide screen because these are twenty-odd short fields
+   and one column would be a scroll. */
+.portal-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.portal-config .req {
+  color: var(--live);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.portal-config code,
+.hint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+/* ---------- quiz run detail ---------- */
+.quiz-run-modal { width: min(960px, 100%); }
+
+.quiz-run-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+}
+.quiz-run-summary > div { display: grid; gap: 5px; align-content: start; }
+
+.stat-value.small { font-size: 17px; }
+.mono-small { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
+
+/* The question log — the primary record. Structured and readable, not a
+   wall of screenshots. */
+.question-log { display: grid; gap: 10px; }
+
+.question-row {
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--line);
+  border-radius: 7px;
+  padding: 11px 13px;
+  background: var(--panel-2);
+  display: grid;
+  gap: 8px;
+}
+.question-row.bad { border-left-color: var(--danger); }
+
+.question-head { display: flex; gap: 9px; align-items: baseline; }
+.question-head .qnum {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--live);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.question-head .qtext { font-size: 13px; line-height: 1.5; }
+
+.qoptions { display: flex; flex-direction: column; gap: 4px; }
+.qoption {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 4px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  line-height: 1.45;
+}
+.qoption b { font-family: var(--font-mono); margin-right: 6px; color: var(--text-faint); }
+/* The chosen option is the one thing a reader is looking for, so it is the
+   only one carrying the accent. */
+.qoption.chosen {
+  color: var(--text);
+  background: rgba(29, 100, 216, 0.08);
+  border-color: rgba(29, 100, 216, 0.35);
+}
+.qoption.chosen b { color: var(--live); }
+
+.qmeta { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.qmeta .bad { color: var(--danger); font-family: var(--font-mono); font-size: 11.5px; }
+
+.qreason {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-style: italic;
+  line-height: 1.5;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 7px;
+}
+
+/* ---------- artefacts ---------- */
+.artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.artifact { margin: 0; display: grid; gap: 7px; }
+.artifact img {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0b0e14;
+  display: block;
+}
+.artifact figcaption {
+  font-size: 11px;
+  color: var(--text-faint);
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ---------- results ---------- */
+.attempt-links { display: flex; gap: 5px; flex-wrap: wrap; }
+.attempt-link {
+  padding: 0;
+  border: none;
+  background: none;
+}
+.attempt-link:hover:not(:disabled) { border: none; filter: brightness(1.08); }

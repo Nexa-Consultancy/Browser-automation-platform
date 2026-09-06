@@ -28,6 +28,7 @@ import { emitEvent } from "./events.js";
 import { publishAlert } from "./alert.js";
 import { clearProfileLocks, ensureDir, profilePlanFor, removeDir } from "./profile.js";
 import { proxyFromSettings } from "./proxyFromSettings.js";
+import { runAssessmentPhase } from "./assessment/phase.js";
 
 const MAX_VIDEO_WAIT_MS = Number(process.env.MAX_VIDEO_WAIT_MS ?? 10_800_000);
 // Chromium's fake microphone, left on its own, synthesizes an audible test
@@ -183,6 +184,11 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
 
   let stopped = false;
   let abort = new AbortController();
+  // The quiz engine runs once, after the navigation steps. Its own abort
+  // signal, separate from the per-step one (which is replaced before every
+  // step), so a Stop mid-quiz is heard immediately.
+  let assessmentDone = false;
+  const assessmentAbort = new AbortController();
   let stepQueue: ParsedStep[] = parseSteps(job.steps);
   let cursor = 0;
   let resumeWaiter: (() => void) | null = null;
@@ -203,6 +209,7 @@ export async function runSession(job: Job, session: SessionRow): Promise<void> {
     if (msg.type === "stop") {
       stopped = true;
       abort.abort();
+      assessmentAbort.abort();
       resumeWaiter?.();
     } else if (msg.type === "append_steps") {
       const parsed = parseSteps(msg.steps);
@@ -320,6 +327,25 @@ ${stepError}`,
       cursor += 1;
 
       if (cursor === stepQueue.length) {
+        // An assessment run is the ordinary step script — which is what
+        // navigates and logs in — followed by the quiz engine, on the SAME
+        // page, in the same browser, under the same stop control. Doing it
+        // here rather than in a parallel runner is what keeps one Chromium
+        // lifecycle, one screencast and one set of controls in the system.
+        if (job.kind === "assessment" && !assessmentDone && !stopped) {
+          assessmentDone = true;
+          await runAssessmentPhase({
+            job,
+            session,
+            page: () => active.current,
+            settings,
+            timeoutMs,
+            signal: assessmentAbort.signal,
+            emit: (type, payload) => emitEvent(session.id, job.id, type, payload),
+          });
+          if (stopped) break;
+        }
+
         await updateSessionStatus(session.id, "interactive");
         await emitEvent(session.id, job.id, "status_change", { status: "interactive" });
         await waitForMoreStepsOrStop();

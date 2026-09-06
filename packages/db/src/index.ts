@@ -12,3 +12,4 @@ export * from "./organizations.js";
 export * from "./accounts.js";
 export * from "./authSessions.js";
 export * from "./tenancy.js";
+export * from "./assessments.js";

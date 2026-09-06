@@ -13,14 +13,22 @@ export type SessionStatus =
   | "failed"
   | "stopped";
 
+/** One entry in a stored step script: a plain-English line, or one action
+ * of a JSON template. Both live in the same array. */
+export type WorkflowStep = string | Record<string, unknown>;
+
+/** Which runner in the worker handles a run. */
+export type JobKind = "automation" | "assessment";
+
 export interface Job {
   id: string;
   name: string;
   targetUrl: string;
-  steps: string[];
+  steps: WorkflowStep[];
   concurrency: number;
   status: JobStatus;
   groupId: string | null; // set when a scheduled group launched this run
+  kind: JobKind;
   createdAt: string;
 }
 
@@ -48,7 +56,10 @@ export type SessionEventType =
   | "video_wait_tick"
   | "log"
   | "status_change"
-  | "screencast_frame";
+  | "screencast_frame"
+  // The Assignments module rides the same event channel, which is why the
+  // existing run view shows quiz progress without knowing what a quiz is.
+  | AssessmentEventType;
 
 export interface SessionEvent {
   id: string;
@@ -86,12 +97,30 @@ export interface PlatformUser {
 /** The two creation flows a template can be the default for. */
 export type TemplateScope = "group" | "user";
 
+/** How a template is written. Mirrors packages/shared/src/templateTypes.ts;
+ * a template with no type is plain-English, which is what every template
+ * that predates the field is. */
+export type TemplateType = "plain" | "json" | "typescript";
+export type TemplateTypeFilter = TemplateType | "all";
+
+export const TEMPLATE_TYPE_LABELS: Record<TemplateType, string> = {
+  plain: "Plain-English",
+  json: "JSON",
+  typescript: "TypeScript",
+};
+
 /** A reusable step script, picked from a list when creating/editing a group
  * instead of retyping the same Task every time. */
 export interface StepTemplate {
   id: string;
   name: string;
-  steps: string[];
+  steps: WorkflowStep[];
+  templateType: TemplateType;
+  /** The source as typed, for JSON and TypeScript. Null for plain, whose
+   * source IS its steps. */
+  body: string | null;
+  /** The portal configuration, when this is an assessment template. */
+  assessment: AssessmentPortalConfig | null;
   /** "group" = prefills a new group's Task, "user" = the script that runs to
    * capture a new user's sign-in. At most one template holds each. */
   defaultFor: TemplateScope | null;
@@ -100,13 +129,20 @@ export interface StepTemplate {
 
 /** A saved link + task + user roster the server runs by itself on a daily
  * wall-clock window. Mirrors packages/shared/src/types.ts. */
+/** Standard automation, or an assessment. The same group either way: same
+ * roster, days, window, timezone and scheduler. */
+export type GroupType = "standard" | "assessment";
+
 export interface Group {
   id: string;
   name: string;
   /** The organization this group is a department of; null = Unassigned. */
   organizationId: string | null;
   targetUrl: string;
-  steps: string[];
+  steps: WorkflowStep[];
+  groupType: GroupType;
+  /** For an assessment group: the template carrying the portal config. */
+  assessmentTemplateId: string | null;
   userNames: string[];
   /** Linked PlatformUsers — each already has their own real login, additive
    * to the free-text userNames roster above. */
@@ -220,4 +256,302 @@ export interface Account extends SessionAccount {
   status: AccountStatus;
   approvedAt: string | null;
   lastLoginAt: string | null;
+}
+
+// ============================================================
+// Assignments — the Assessment / Quiz module.
+// Mirrors packages/shared/src/assessmentTypes.ts and portalConfig.ts on
+// the wire, same convention as everything above.
+// ============================================================
+
+export type QuestionType =
+  | "single_choice"
+  | "multiple_choice"
+  | "true_false"
+  | "dropdown"
+  | "text"
+  | "matching"
+  | "ordering";
+
+/** How the portal describes a quiz. "unknown" is honest and common — plenty
+ * of portals publish no status until you open the quiz. */
+export type PortalQuizStatus = "unknown" | "not_started" | "in_progress" | "completed";
+
+/** Where a quiz stands in OUR record. */
+export type QuizStatus = "discovered" | "pending" | "in_progress" | "completed" | "failed" | "skipped";
+
+/** One attempt at one quiz. "already_completed" is not a variety of
+ * "completed": it means we arrived, found the portal had it submitted, and
+ * did NOT take it. */
+export type QuizRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped"
+  | "skipped"
+  | "already_completed";
+
+export type AssessmentEventType =
+  | "assessment_started"
+  | "quiz_discovered"
+  | "quiz_skipped_completed"
+  | "quiz_started"
+  | "question_extracted"
+  | "ai_request"
+  | "ai_response"
+  | "answer_selected"
+  | "question_completed"
+  | "quiz_submitted"
+  | "quiz_result_received"
+  | "quiz_completed"
+  | "assessment_completed"
+  | "assessment_failed";
+
+/** What a live assessment session is doing right now, projected from its
+ * events rather than stored — the events are already durable and already
+ * relayed, so a phase is a view of them, not a second source of truth. */
+export type AssessmentPhase =
+  | "queued"
+  | "running"
+  | "reading_question"
+  | "waiting_for_ai"
+  | "selecting_answer"
+  | "next_question"
+  | "submitting"
+  | "checking_result"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export const ASSESSMENT_PHASE_LABELS: Record<AssessmentPhase, string> = {
+  queued: "Queued",
+  running: "Running",
+  reading_question: "Reading question",
+  waiting_for_ai: "Waiting for AI",
+  selecting_answer: "Selecting answer",
+  next_question: "Moving to next question",
+  submitting: "Submitting",
+  checking_result: "Checking result",
+  completed: "Completed",
+  failed: "Failed",
+  skipped: "Skipped",
+};
+
+const PHASE_BY_EVENT: Partial<Record<AssessmentEventType, AssessmentPhase>> = {
+  assessment_started: "running",
+  quiz_discovered: "running",
+  quiz_skipped_completed: "skipped",
+  quiz_started: "running",
+  question_extracted: "reading_question",
+  ai_request: "waiting_for_ai",
+  ai_response: "selecting_answer",
+  answer_selected: "selecting_answer",
+  question_completed: "next_question",
+  quiz_submitted: "submitting",
+  quiz_result_received: "checking_result",
+  quiz_completed: "running",
+  assessment_completed: "completed",
+  assessment_failed: "failed",
+};
+
+/** The current phase from a session's events, newest last. */
+export function phaseFromEvents(events: { type: string }[]): AssessmentPhase {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const phase = PHASE_BY_EVENT[events[i].type as AssessmentEventType];
+    if (phase) return phase;
+  }
+  return "queued";
+}
+
+/**
+ * The portal configuration a quiz template carries.
+ *
+ * Empty until the real portal is supplied — every field here is a place a
+ * selector will go, and none of them is guessed at. See
+ * packages/shared/src/portalConfig.ts, which is the definition.
+ */
+export interface AssessmentPortalConfig {
+  assessmentUrl?: string;
+  quizListSelector?: string;
+  quizCardSelector?: string;
+  quizNameSelector?: string;
+  quizIdAttribute?: string;
+  quizOpenSelector?: string;
+  completion?: {
+    statusSelector?: string;
+    completedText?: string[];
+    pendingText?: string[];
+    completedMarkerSelector?: string;
+  };
+  question?: {
+    questionSelector?: string;
+    progressSelector?: string;
+    optionsSelector?: string;
+    optionTextSelector?: string;
+    selectedOptionSelector?: string;
+    optionClickSelector?: string;
+    questionType?: QuestionType;
+  };
+  nextSelector?: string;
+  submitSelector?: string;
+  confirmSubmitSelector?: string;
+  resultSelector?: string;
+  scoreSelector?: string;
+  backToListSelector?: string;
+  resultTimeoutMs?: number;
+}
+
+/** The editor's field list, in the order a run uses them. Mirrors
+ * PORTAL_CONFIG_FIELDS in shared so the two never drift. */
+export const PORTAL_CONFIG_FIELDS: { path: string; label: string; hint: string }[] = [
+  { path: "assessmentUrl", label: "Assessment URL", hint: "Opened before looking for the quiz list. Leave blank if the login workflow already lands there." },
+  { path: "quizListSelector", label: "Quiz list", hint: "The container that holds the quiz cards." },
+  { path: "quizCardSelector", label: "Quiz card", hint: "One element per quiz, inside the list." },
+  { path: "quizNameSelector", label: "Quiz name", hint: "The title of the quiz, relative to the card." },
+  { path: "quizIdAttribute", label: "Quiz id attribute", hint: "A stable per-quiz attribute (e.g. data-quiz-id) used to match the portal quiz to our record." },
+  { path: "quizOpenSelector", label: "Open quiz", hint: "Clicked to open a quiz. Defaults to the card itself." },
+  { path: "completion.statusSelector", label: "Quiz status", hint: "Where the card shows Submitted / Pending." },
+  { path: "completion.completedText", label: "Status means completed", hint: "Comma-separated words that mean already submitted." },
+  { path: "completion.pendingText", label: "Status means pending", hint: "Comma-separated words that mean not done yet. Checked first." },
+  { path: "completion.completedMarkerSelector", label: "Completed marker", hint: "A selector only completed cards have (e.g. a View result link)." },
+  { path: "question.questionSelector", label: "Question", hint: "The text of the current question." },
+  { path: "question.progressSelector", label: "Progress", hint: "Optional counter, e.g. Question 3 of 10." },
+  { path: "question.optionsSelector", label: "Options", hint: "One element per answer choice, in display order." },
+  { path: "question.optionTextSelector", label: "Option text", hint: "Optional label inside an option row." },
+  { path: "question.optionClickSelector", label: "Option click target", hint: "Optional control inside the row to click (e.g. the radio input)." },
+  { path: "question.selectedOptionSelector", label: "Selected option", hint: "How a chosen option looks, used to verify the click landed." },
+  { path: "nextSelector", label: "Next", hint: "Moves to the next question." },
+  { path: "submitSelector", label: "Submit", hint: "Submits the quiz." },
+  { path: "confirmSubmitSelector", label: "Confirm submit", hint: "Optional confirmation control shown after Submit." },
+  { path: "resultSelector", label: "Result", hint: "Only present once a quiz is finished — also what makes a retry safe." },
+  { path: "scoreSelector", label: "Score", hint: "Where the score is shown, if the portal shows one." },
+  { path: "backToListSelector", label: "Back to list", hint: "Returns to the quiz list. Defaults to re-opening the assessment URL." },
+];
+
+/** Without these the engine cannot run, so a run is refused with them named
+ * rather than failing inside a browser. resultSelector is here because it is
+ * how the engine asks "is this already submitted?" — without it a submission
+ * can never be confirmed. */
+export const REQUIRED_PORTAL_FIELDS = [
+  "quizCardSelector",
+  "question.questionSelector",
+  "question.optionsSelector",
+  "submitSelector",
+  "resultSelector",
+];
+
+export interface AssessmentOverview {
+  organizations: number;
+  groups: number;
+  assessmentGroups: number;
+  people: number;
+  quizzesCompleted: number;
+  quizzesPending: number;
+  quizzesRunning: number;
+  failedRuns: number;
+  averageScore: number | null;
+}
+
+export interface AssessmentPerson {
+  personId: string;
+  personName: string;
+  email: string;
+  organizationId: string | null;
+  totalQuizzes: number;
+  completedQuizzes: number;
+  pendingQuizzes: number;
+  failedQuizzes: number;
+  averageScore: number | null;
+  lastAssessmentRun: string | null;
+  lastSuccessfulRun: string | null;
+}
+
+export interface AssessmentProfile {
+  personId: string;
+  organizationId: string | null;
+  lastAssessmentRun: string | null;
+  lastSuccessfulRun: string | null;
+  totalQuizzes: number;
+  completedQuizzes: number;
+  pendingQuizzes: number;
+  failedQuizzes: number;
+  lastUpdated: string;
+}
+
+export interface AssessmentQuiz {
+  id: string;
+  organizationId: string | null;
+  personId: string;
+  externalQuizId: string;
+  quizName: string;
+  portalStatus: PortalQuizStatus;
+  internalStatus: QuizStatus;
+  score: number | null;
+  scoreText: string | null;
+  discoveredAt: string;
+  completedAt: string | null;
+  lastCheckedAt: string;
+}
+
+export interface QuizRun {
+  id: string;
+  organizationId: string | null;
+  groupId: string | null;
+  personId: string;
+  personName: string;
+  quizId: string | null;
+  quizName: string;
+  jobId: string | null;
+  sessionId: string | null;
+  status: QuizRunStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  questionsTotal: number;
+  questionsAnswered: number;
+  score: number | null;
+  scoreText: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+/** One question as answered — the primary, searchable record. A screenshot
+ * is an artefact, not a log. */
+export interface QuizQuestionResult {
+  id: string;
+  quizRunId: string;
+  questionNumber: number;
+  questionText: string;
+  questionType: QuestionType;
+  options: { id: string; text: string }[];
+  selectedOption: string | null;
+  provider: string | null;
+  model: string | null;
+  confidence: number | null;
+  latencyMs: number | null;
+  fallbackUsed: boolean;
+  reason: string | null;
+  error: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AssessmentArtifact {
+  id: string;
+  quizRunId: string;
+  kind: "completion" | "failure" | "result";
+  contentType: string;
+  byteSize: number;
+  caption: string;
+  createdAt: string;
+}
+
+/** An assessment group with the roster and the readiness the Quizzes tab
+ * shows — "this cannot run yet, and here is why" belongs on the card, not
+ * in a log nobody reads until 2 PM. */
+export interface AssessmentGroupRow {
+  group: GroupWithSchedule;
+  people: { id: string; name: string; email: string }[];
+  ready: boolean;
+  blockedBecause: string | null;
 }

@@ -1,14 +1,16 @@
-import type { Job, JobStatus } from "@automation/shared";
+import type { AssessmentPortalConfig, Job, JobKind, JobStatus, WorkflowStep } from "@automation/shared";
 import { pool } from "./pool.js";
 
 interface JobRow {
   id: string;
   name: string;
   target_url: string;
-  steps: string[];
+  steps: WorkflowStep[];
   concurrency: number;
   status: JobStatus;
   group_id: string | null;
+  kind: JobKind | null;
+  assessment: AssessmentPortalConfig | null;
   created_at: Date;
 }
 
@@ -21,6 +23,10 @@ function toJob(r: JobRow): Job {
     concurrency: r.concurrency,
     status: r.status,
     groupId: r.group_id ?? null,
+    // Every run that predates the column is ordinary automation, which is
+    // what it was.
+    kind: r.kind ?? "automation",
+    assessment: r.assessment ?? null,
     createdAt: r.created_at.toISOString(),
   };
 }
@@ -28,8 +34,14 @@ function toJob(r: JobRow): Job {
 export async function createJob(input: {
   name: string;
   targetUrl: string;
-  steps: string[];
+  steps: WorkflowStep[];
   concurrency: number;
+  /** Which runner in the worker handles this. Defaults to the ordinary
+   * step runner, so every existing caller is unchanged. */
+  kind?: JobKind;
+  /** For an assessment run: the portal config as it stands right now,
+   * snapshotted so a template edit can't change a run already going. */
+  assessment?: AssessmentPortalConfig | null;
   /** Set when a scheduled group launched this run, so the dashboard can
    * trace a job back to the group that spawned it. */
   groupId?: string | null;
@@ -38,8 +50,8 @@ export async function createJob(input: {
   accountId?: string | null;
 }): Promise<Job> {
   const { rows } = await pool.query<JobRow>(
-    `INSERT INTO jobs (name, target_url, steps, concurrency, status, group_id, account_id)
-     VALUES ($1, $2, $3::jsonb, $4, 'pending', $5, $6)
+    `INSERT INTO jobs (name, target_url, steps, concurrency, status, group_id, account_id, kind, assessment)
+     VALUES ($1, $2, $3::jsonb, $4, 'pending', $5, $6, $7, $8::jsonb)
      RETURNING *`,
     [
       input.name,
@@ -48,6 +60,8 @@ export async function createJob(input: {
       input.concurrency,
       input.groupId ?? null,
       input.accountId ?? null,
+      input.kind ?? "automation",
+      input.assessment ? JSON.stringify(input.assessment) : null,
     ],
   );
   return toJob(rows[0]);

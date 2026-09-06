@@ -15,6 +15,7 @@ import { jobRoutes } from "./routes/jobs.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { userRoutes } from "./routes/users.js";
 import { templateRoutes } from "./routes/templates.js";
+import { assessmentRoutes } from "./routes/assessments.js";
 import { registerWs } from "./ws.js";
 import { startGroupScheduler } from "./scheduler.js";
 import { startAlertListener } from "./alertListener.js";
@@ -68,6 +69,7 @@ async function main() {
   await app.register(sessionRoutes);
   await app.register(userRoutes);
   await app.register(templateRoutes);
+  await app.register(assessmentRoutes);
   await app.register(authRoutes);
   await app.register(accountRoutes);
   await app.register(organizationRoutes);

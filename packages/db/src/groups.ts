@@ -1,4 +1,4 @@
-import type { Group } from "@automation/shared";
+import type { Group, GroupType, WorkflowStep } from "@automation/shared";
 import { pool } from "./pool.js";
 
 interface GroupDbRow {
@@ -7,7 +7,9 @@ interface GroupDbRow {
   account_id: string | null;
   organization_id: string | null;
   target_url: string;
-  steps: string[];
+  steps: WorkflowStep[];
+  group_type: GroupType | null;
+  assessment_template_id: string | null;
   user_names: string[];
   user_ids: string[];
   start_time: string;
@@ -32,6 +34,10 @@ function toGroup(r: GroupDbRow): Group {
     organizationId: r.organization_id,
     targetUrl: r.target_url,
     steps: r.steps,
+    // A row written before group types existed is a standard automation
+    // group, which is exactly what it has always been.
+    groupType: r.group_type ?? "standard",
+    assessmentTemplateId: r.assessment_template_id,
     userNames: r.user_names,
     userIds: r.user_ids,
     startTime: r.start_time,
@@ -54,7 +60,9 @@ export async function createGroup(input: {
   accountId: string;
   organizationId: string | null;
   targetUrl: string;
-  steps: string[];
+  steps: WorkflowStep[];
+  groupType: GroupType;
+  assessmentTemplateId: string | null;
   userNames: string[];
   userIds: string[];
   startTime: string;
@@ -65,8 +73,8 @@ export async function createGroup(input: {
   enabled: boolean;
 }): Promise<Group> {
   const { rows } = await pool.query<GroupDbRow>(
-    `INSERT INTO groups (name, target_url, steps, user_names, user_ids, start_time, end_time, lead_minutes, days, timezone, enabled, organization_id, account_id)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
+    `INSERT INTO groups (name, target_url, steps, user_names, user_ids, start_time, end_time, lead_minutes, days, timezone, enabled, organization_id, account_id, group_type, assessment_template_id)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15)
      RETURNING *`,
     [
       input.name,
@@ -82,6 +90,8 @@ export async function createGroup(input: {
       input.enabled,
       input.organizationId,
       input.accountId,
+      input.groupType,
+      input.assessmentTemplateId,
     ],
   );
   return toGroup(rows[0]);
@@ -103,7 +113,9 @@ export async function updateGroup(
     name: string;
     organizationId: string | null;
     targetUrl: string;
-    steps: string[];
+    steps: WorkflowStep[];
+    groupType: GroupType;
+    assessmentTemplateId: string | null;
     userNames: string[];
     userIds: string[];
     startTime: string;
@@ -118,7 +130,8 @@ export async function updateGroup(
     `UPDATE groups
         SET name = $2, target_url = $3, steps = $4::jsonb, user_names = $5::jsonb,
             start_time = $6, end_time = $7, days = $8::jsonb, timezone = $9, enabled = $10,
-            lead_minutes = $11, user_ids = $12::jsonb, organization_id = $13
+            lead_minutes = $11, user_ids = $12::jsonb, organization_id = $13,
+            group_type = $15, assessment_template_id = $16
       WHERE id = $1 AND account_id = $14
       RETURNING *`,
     [
@@ -136,6 +149,8 @@ export async function updateGroup(
       JSON.stringify(input.userIds),
       input.organizationId,
       accountId,
+      input.groupType,
+      input.assessmentTemplateId,
     ],
   );
   return rows[0] ? toGroup(rows[0]) : null;

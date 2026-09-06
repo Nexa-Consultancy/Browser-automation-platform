@@ -362,3 +362,181 @@ UPDATE jobs j
  WHERE j.group_id = g.id
    AND j.account_id IS NULL
    AND g.account_id IS NOT NULL;
+
+-- ============================================================
+-- Assignments: the Assessment / Quiz module.
+--
+-- Everything here hangs off the tables that already exist — an assessment
+-- is run BY a `users` row, FOR an `organizations` row, launched as a normal
+-- `jobs` row by a normal `groups` row, and logged through the same
+-- `session_events`. Nothing below duplicates a person, a schedule or a run;
+-- these tables only hold what the existing ones have no place for: what a
+-- person has and hasn't been asked, and what they answered.
+-- ============================================================
+
+-- ---------- templates gain a format ----------
+-- The original plain-English script is 'plain', and a row that predates this
+-- column reads as exactly that, so every existing template keeps working
+-- untouched. 'json' and 'typescript' keep their source in `body`; both still
+-- reduce to the same normalized workflow the plain script does.
+ALTER TABLE step_templates ADD COLUMN IF NOT EXISTS template_type TEXT NOT NULL DEFAULT 'plain';
+ALTER TABLE step_templates ADD COLUMN IF NOT EXISTS body TEXT;
+
+-- The portal configuration for an assessment template: which selector finds
+-- the quiz list, the question, the options, Next, Submit, the result.
+-- Deliberately empty until the real portal is supplied — see
+-- packages/shared/src/portalConfig.ts, which defines every field.
+ALTER TABLE step_templates ADD COLUMN IF NOT EXISTS assessment JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_step_templates_type ON step_templates(account_id, template_type);
+
+-- ---------- groups can be assessment groups ----------
+-- Not a second kind of group: the same roster, days, window, timezone,
+-- lead, Join now and the same scheduler. This only decides which runner the
+-- job it launches routes to, which is what keeps one cron in the system.
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS group_type TEXT NOT NULL DEFAULT 'standard';
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS assessment_template_id UUID
+  REFERENCES step_templates(id) ON DELETE SET NULL;
+
+-- ---------- jobs know which runner to use ----------
+-- Existing rows read as 'automation', which is what they are. Before this,
+-- "is this a login capture?" was inferred from the job's NAME; a real column
+-- is what lets a third kind exist without that trick growing.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'automation';
+-- The portal config as it stood when the run was launched. Snapshotted
+-- rather than looked up so editing a template mid-run cannot change what a
+-- quiz already in progress is doing.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS assessment JSONB;
+
+-- ---------- a person's assessment state, carried between runs ----------
+-- Distinct from their BROWSER profile (cookies and a login, on disk in the
+-- worker's volume). This is what they have and haven't done — the durable
+-- answer to "what is left?" that survives a worker restart, which is the
+-- whole reason it is in Postgres and not in memory.
+CREATE TABLE IF NOT EXISTS assessment_profiles (
+  person_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  account_id UUID REFERENCES accounts(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+  last_assessment_run TIMESTAMPTZ,
+  last_successful_run TIMESTAMPTZ,
+  total_quizzes INT NOT NULL DEFAULT 0,
+  completed_quizzes INT NOT NULL DEFAULT 0,
+  pending_quizzes INT NOT NULL DEFAULT 0,
+  failed_quizzes INT NOT NULL DEFAULT 0,
+  last_updated TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_profiles_account ON assessment_profiles(account_id);
+
+-- ---------- one quiz, as it stands for one person ----------
+-- `portal_status` is what the portal last told us; `internal_status` is what
+-- we did about it. Kept apart on purpose: that split is what lets a run
+-- notice "the portal says submitted, we have no record" and fix OUR side
+-- instead of retaking someone's quiz.
+CREATE TABLE IF NOT EXISTS assessment_quizzes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID REFERENCES accounts(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+  person_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- The portal's own id where it exposes one, else the quiz's name. This is
+  -- the key a later run matches on, which is why the portal config has a
+  -- quizIdAttribute worth filling in.
+  external_quiz_id TEXT NOT NULL,
+  quiz_name TEXT NOT NULL DEFAULT '',
+  portal_status TEXT NOT NULL DEFAULT 'unknown',
+  internal_status TEXT NOT NULL DEFAULT 'discovered',
+  score NUMERIC(5,1),
+  score_text TEXT,
+  discovered_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  last_checked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per person per quiz. The upsert the worker does on discovery
+-- depends on this, and so does "don't retake it": without the constraint a
+-- second run would simply insert a second copy with no history.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_assessment_quizzes_person_external
+  ON assessment_quizzes(person_id, external_quiz_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_quizzes_account ON assessment_quizzes(account_id);
+CREATE INDEX IF NOT EXISTS idx_assessment_quizzes_org ON assessment_quizzes(organization_id);
+
+-- ---------- one attempt at one quiz ----------
+-- job_id/session_id link a quiz result straight back to the live view, the
+-- event feed and the screencast it happened in, so a result is never a dead
+-- end. ON DELETE SET NULL: run history is trimmed long before assessment
+-- history should be.
+CREATE TABLE IF NOT EXISTS quiz_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id UUID REFERENCES accounts(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
+  group_id UUID REFERENCES groups(id) ON DELETE SET NULL,
+  person_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  person_name TEXT NOT NULL DEFAULT '',
+  quiz_id UUID REFERENCES assessment_quizzes(id) ON DELETE SET NULL,
+  quiz_name TEXT NOT NULL DEFAULT '',
+  job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,
+  session_id UUID REFERENCES sessions(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  questions_total INT NOT NULL DEFAULT 0,
+  questions_answered INT NOT NULL DEFAULT 0,
+  score NUMERIC(5,1),
+  score_text TEXT,
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quiz_runs_account ON quiz_runs(account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quiz_runs_person ON quiz_runs(person_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quiz_runs_quiz ON quiz_runs(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_runs_job ON quiz_runs(job_id);
+
+-- ---------- the question log ----------
+-- The PRIMARY record of what happened, not a screenshot. Structured and
+-- searchable: which question, which options were on screen, which one was
+-- chosen, by which model, how sure it said it was, and how long it took.
+-- A screenshot is an artefact (below); it is not a log.
+CREATE TABLE IF NOT EXISTS quiz_question_results (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiz_run_id UUID NOT NULL REFERENCES quiz_runs(id) ON DELETE CASCADE,
+  question_number INT NOT NULL,
+  question_text TEXT NOT NULL DEFAULT '',
+  question_type TEXT NOT NULL DEFAULT 'single_choice',
+  -- [{ "id": "A", "text": "..." }, ...] exactly as extracted and as sent.
+  options JSONB NOT NULL DEFAULT '[]',
+  selected_option TEXT,
+  provider TEXT,
+  model TEXT,
+  confidence NUMERIC(4,3),
+  latency_ms INT,
+  fallback_used BOOLEAN NOT NULL DEFAULT false,
+  -- The model's stated reason, kept only when Settings says to: it is
+  -- generated text about the contents of somebody's assessment.
+  reason TEXT,
+  error TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quiz_question_results_run
+  ON quiz_question_results(quiz_run_id, question_number);
+
+-- ---------- artefacts ----------
+-- Screenshots, kept deliberately sparingly: the completion/result state and
+-- a failure worth looking at. NOT one per question — that would be a video
+-- recorder pretending to be a log, and the question rows above are the
+-- searchable record.
+CREATE TABLE IF NOT EXISTS assessment_artifacts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  quiz_run_id UUID NOT NULL REFERENCES quiz_runs(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'completion',
+  content_type TEXT NOT NULL DEFAULT 'image/jpeg',
+  caption TEXT NOT NULL DEFAULT '',
+  byte_size INT NOT NULL DEFAULT 0,
+  data BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_artifacts_run ON assessment_artifacts(quiz_run_id, created_at);

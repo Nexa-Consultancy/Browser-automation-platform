@@ -12,6 +12,18 @@ import type {
   SessionAccount,
   StepTemplate,
   TemplateScope,
+  TemplateType,
+  TemplateTypeFilter,
+  AssessmentArtifact,
+  AssessmentGroupRow,
+  AssessmentOverview,
+  AssessmentPerson,
+  AssessmentPortalConfig,
+  AssessmentProfile,
+  AssessmentQuiz,
+  QuizQuestionResult,
+  QuizRun,
+  WorkflowStep,
 } from "./types";
 
 const API_BASE = ""; // same-origin in prod (nginx proxies /api); Vite dev server proxies /api too
@@ -86,10 +98,19 @@ export async function appendStepsToSession(sessionId: string, steps: string): Pr
 
 export interface CreateGroupInput {
   name: string;
+  /** "standard" or "assessment". The same group either way — same roster,
+   * days, window and scheduler; only the runner differs. */
+  groupType?: "standard" | "assessment";
+  /** For an assessment group: the template carrying the portal config. */
+  assessmentTemplateId?: string | null;
   /** The organization this group is a department of; null = Unassigned. */
   organizationId: string | null;
   targetUrl: string;
   steps: string;
+  /** A task authored as JSON, sent as the structured actions themselves.
+   * Flattening them to English lines would silently throw away the ordered
+   * target strategies, which is the whole point of the format. */
+  stepsJson?: WorkflowStep[] | null;
   userNames: string[];
   userIds: string[]; // linked PlatformUsers, additive to userNames
   startTime: string; // "HH:MM" — when the thing you're automating happens
@@ -312,11 +333,25 @@ export async function deleteUser(id: string): Promise<void> {
 
 // ---------- reusable step templates ----------
 
-export async function listTemplates(): Promise<{ templates: StepTemplate[] }> {
-  return json(await fetch(`${API_BASE}/api/templates`));
+/** `type` narrows the list to one format; omitted (or "all") is every
+ * template, which is what every existing caller wants. */
+export async function listTemplates(type?: TemplateTypeFilter): Promise<{ templates: StepTemplate[] }> {
+  const q = type && type !== "all" ? `?type=${encodeURIComponent(type)}` : "";
+  return json(await fetch(`${API_BASE}/api/templates${q}`));
 }
 
-export async function createTemplate(input: { name: string; steps: string }): Promise<{ template: StepTemplate }> {
+export interface TemplateInput {
+  name: string;
+  templateType: TemplateType;
+  /** Plain-English only: one step per line. */
+  steps?: string;
+  /** JSON and TypeScript: the source as typed. */
+  body?: string;
+  /** The portal configuration, when this template drives a quiz. */
+  assessment?: AssessmentPortalConfig | null;
+}
+
+export async function createTemplate(input: TemplateInput): Promise<{ template: StepTemplate }> {
   return json(
     await fetch(`${API_BASE}/api/templates`, {
       method: "POST",
@@ -326,10 +361,7 @@ export async function createTemplate(input: { name: string; steps: string }): Pr
   );
 }
 
-export async function updateTemplate(
-  id: string,
-  input: { name: string; steps: string },
-): Promise<{ template: StepTemplate }> {
+export async function updateTemplate(id: string, input: TemplateInput): Promise<{ template: StepTemplate }> {
   return json(
     await fetch(`${API_BASE}/api/templates/${id}`, {
       method: "PUT",
@@ -535,4 +567,110 @@ export async function setAccountStatus(id: string, status: AccountStatus): Promi
 /** Deletes the account AND its whole workspace. No undo. */
 export async function deleteAccount(id: string): Promise<void> {
   await json(await fetch(`${API_BASE}/api/accounts/${id}`, { method: "DELETE" }));
+}
+
+// ---------- Assignments: the Assessment / Quiz module ----------
+
+/** The Quizzes overview, plus whether the AI is actually configured. A
+ * dashboard of zeroes looks the same whether nothing has run or nothing
+ * CAN run, and only one of those is a problem. */
+export async function assessmentOverview(): Promise<{
+  overview: AssessmentOverview;
+  recentRuns: QuizRun[];
+  aiReady: boolean;
+  aiMissing: string[];
+}> {
+  return json(await fetch(`${API_BASE}/api/assessments/overview`));
+}
+
+export async function assessmentGroups(): Promise<{ groups: AssessmentGroupRow[] }> {
+  return json(await fetch(`${API_BASE}/api/assessments/groups`));
+}
+
+export async function assessmentPeople(organizationId?: string | null): Promise<{ people: AssessmentPerson[] }> {
+  const q = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
+  return json(await fetch(`${API_BASE}/api/assessments/users${q}`));
+}
+
+/** One person's whole picture: profile counters, every quiz, recent runs. */
+export async function assessmentPerson(id: string): Promise<{
+  person: { id: string; name: string; email: string; organizationId: string | null };
+  profile: AssessmentProfile | null;
+  summary: {
+    totalQuizzes: number;
+    completedQuizzes: number;
+    pendingQuizzes: number;
+    failedQuizzes: number;
+    averageScore: number | null;
+  };
+  quizzes: AssessmentQuiz[];
+  runs: QuizRun[];
+}> {
+  return json(await fetch(`${API_BASE}/api/assessments/users/${id}`));
+}
+
+export async function assessmentQuizzes(filter: { organizationId?: string; personId?: string } = {}): Promise<{
+  quizzes: AssessmentQuiz[];
+}> {
+  const params = new URLSearchParams();
+  if (filter.organizationId) params.set("organizationId", filter.organizationId);
+  if (filter.personId) params.set("personId", filter.personId);
+  const q = params.toString();
+  return json(await fetch(`${API_BASE}/api/assessments/quizzes${q ? `?${q}` : ""}`));
+}
+
+export async function assessmentRuns(filter: { personId?: string; groupId?: string; status?: string } = {}): Promise<{
+  runs: QuizRun[];
+}> {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filter)) if (v) params.set(k, v);
+  const q = params.toString();
+  return json(await fetch(`${API_BASE}/api/assessments/runs${q ? `?${q}` : ""}`));
+}
+
+/** One attempt in full — the structured question log is the record here;
+ * the screenshot is an artefact fetched by its own URL. */
+export async function assessmentRun(id: string): Promise<{
+  run: QuizRun;
+  questions: QuizQuestionResult[];
+  artifacts: AssessmentArtifact[];
+}> {
+  return json(await fetch(`${API_BASE}/api/assessments/runs/${id}`));
+}
+
+/** Where an artefact's bytes live. Used as an <img src>, so the browser
+ * caches it rather than us inlining megabytes of JPEG into a JSON body. */
+export function assessmentArtifactUrl(id: string): string {
+  return `${API_BASE}/api/assessments/artifacts/${id}`;
+}
+
+/** Run an assessment group now, without waiting for its window — the same
+ * rules as the Groups tab Join now: the scheduled run still happens, and
+ * the scheduler leaves this one alone. */
+export async function runAssessmentGroup(groupId: string): Promise<{ jobId: string }> {
+  return json(await fetch(`${API_BASE}/api/assessments/groups/${groupId}/run`, { method: "POST" }));
+}
+
+// ---------- Assessment AI settings ----------
+
+export async function getAssessmentSettings(): Promise<{
+  settings: Record<string, string>;
+  ready: boolean;
+  missing: string[];
+}> {
+  return json(await fetch(`${API_BASE}/api/assessment-settings`));
+}
+
+export async function saveAssessmentSettings(patch: Record<string, string>): Promise<{
+  settings: Record<string, string>;
+  ready: boolean;
+  missing: string[];
+}> {
+  return json(
+    await fetch(`${API_BASE}/api/assessment-settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
+  );
 }

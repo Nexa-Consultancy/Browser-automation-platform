@@ -23,7 +23,7 @@ import {
   updateUser,
 } from "@automation/db";
 import { stashCredential } from "@automation/queue";
-import { AUTO_LOGIN_TEMPLATE_ID, USER_LOGIN_CAPTURE_JOB_NAME } from "@automation/shared";
+import { AUTO_LOGIN_TEMPLATE_ID, USER_LOGIN_CAPTURE_JOB_NAME, type WorkflowStep } from "@automation/shared";
 import { launchJob, stopJob } from "../services/launch.js";
 import { clearUserProfile, userLoginExists } from "../services/users.js";
 import { accountId, requireAuth } from "../auth/context.js";
@@ -76,7 +76,7 @@ const FALLBACK_LOGIN_CAPTURE_STEPS = [
  * default in Settings takes effect on the very next sign-in, with no deploy
  * and no restart.
  */
-async function loginCaptureSteps(account: string): Promise<string[]> {
+async function loginCaptureSteps(account: string): Promise<WorkflowStep[]> {
   const chosen = await getDefaultTemplate(account, "user");
   if (chosen && chosen.steps.length > 0) return chosen.steps;
   const seeded = await getTemplate(AUTO_LOGIN_TEMPLATE_ID, account);

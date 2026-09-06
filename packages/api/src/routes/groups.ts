@@ -5,6 +5,7 @@ import {
   deleteGroup,
   getGroup,
   getOrganization,
+  getTemplate,
   getUsersByIds,
   listGroups,
   setGroupActiveJob,
@@ -24,10 +25,17 @@ import {
   serverTimezone,
   windowStateAt,
   zonedNow,
+  JSON_WORKFLOW_VERSION,
+  formatWorkflowErrors,
+  isGroupType,
+  validateJsonWorkflow,
   type Group,
+  type GroupType,
   type GroupWithSchedule,
+  type WorkflowStep,
 } from "@automation/shared";
-import { launchJob, normalizeSteps, stopJob } from "../services/launch.js";
+import { launchJob, normalizeSteps, normalizeWorkflowSteps, stopJob } from "../services/launch.js";
+import { planAssessmentRun } from "../services/assessments.js";
 import { clearGroupProfiles } from "../services/profiles.js";
 import { userLoginExists } from "../services/users.js";
 import { raiseAlert } from "../alerts.js";
@@ -37,9 +45,24 @@ const MAX_USERS_PER_GROUP = 200;
 
 interface CreateGroupBody {
   name?: string;
+  /** "standard" (the default, and what every existing group is) or
+   * "assessment". Same schedule, same roster, different runner. */
+  groupType?: string;
+  /** For an assessment group: the template carrying the portal config. */
+  assessmentTemplateId?: string | null;
   organizationId?: string | null;
   targetUrl?: string;
   steps?: string;
+  /**
+   * A task authored as JSON, as the structured actions themselves.
+   *
+   * Sent instead of `steps` when a group is created from a JSON template.
+   * Flattening those to English lines would work but would silently throw
+   * away the one thing the format is for — an ordered list of ways to find
+   * an element — so the objects travel through intact and land in the same
+   * jsonb column the English lines do.
+   */
+  stepsJson?: unknown;
   userNames?: string[];
   userIds?: string[];
   startTime?: string;
@@ -77,9 +100,11 @@ async function withSchedule(group: Group, account: string): Promise<GroupWithSch
 
 interface ParsedGroup {
   name: string;
+  groupType: GroupType;
+  assessmentTemplateId: string | null;
   organizationId: string | null;
   targetUrl: string;
-  steps: string[];
+  steps: WorkflowStep[];
   userNames: string[];
   userIds: string[];
   startTime: string;
@@ -98,10 +123,23 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
   const targetUrl = body.targetUrl?.trim() ?? "";
   if (!targetUrl) return { error: "link (targetUrl) is required" };
 
-  const steps = normalizeSteps(body.steps ?? "");
-  // normalizeSteps always injects "open {{url}}", so a script of nothing but
-  // that means the task field was left empty.
-  if (steps.length < 2) return { error: "task steps are required" };
+  let steps: WorkflowStep[];
+  if (Array.isArray(body.stepsJson) && body.stepsJson.length > 0) {
+    // Validated here, at the same gate as everything else: a malformed
+    // workflow must never reach a worker, whichever door it came in by.
+    const parsed = validateJsonWorkflow({
+      name: body.name ?? "",
+      version: JSON_WORKFLOW_VERSION,
+      steps: body.stepsJson,
+    });
+    if (!parsed.ok) return { error: `task steps: ${formatWorkflowErrors(parsed.errors)}` };
+    steps = normalizeWorkflowSteps(parsed.workflow.steps);
+  } else {
+    steps = normalizeSteps(body.steps ?? "");
+    // normalizeSteps always injects "open {{url}}", so a script of nothing
+    // but that means the task field was left empty.
+    if (steps.length < 2) return { error: "task steps are required" };
+  }
 
   const userNames = (Array.isArray(body.userNames) ? body.userNames : [])
     .map((n) => String(n ?? "").trim())
@@ -140,9 +178,19 @@ function parseGroupBody(body: CreateGroupBody): { value: ParsedGroup } | { error
   const timezone = body.timezone?.trim() || serverTimezone();
   if (!isValidTimezone(timezone)) return { error: `unknown timezone "${timezone}"` };
 
+  const groupType: GroupType = isGroupType(body.groupType) ? body.groupType : "standard";
+  const assessmentTemplateId = body.assessmentTemplateId?.trim() || null;
+  // A standard group has no quiz to describe, so silently keep the link off
+  // it rather than storing a template it will never consult.
+  if (groupType === "standard" && assessmentTemplateId) {
+    return { error: "only an assessment group can have an assessment template" };
+  }
+
   return {
     value: {
       name: body.name?.trim() ?? "",
+      groupType,
+      assessmentTemplateId: groupType === "assessment" ? assessmentTemplateId : null,
       // "" and undefined both mean Unassigned — a <select> with no choice
       // made posts the empty string, not null.
       organizationId: body.organizationId?.trim() || null,
@@ -344,6 +392,19 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    // An assessment group has to be configured before it can run: a
+    // template, its selectors, and a working AI provider. Checked here so
+    // the answer arrives at the button, naming what to fill in, rather
+    // than as a browser flailing at a page it cannot read.
+    let assessment = null;
+    let concurrencyLimit: number | undefined;
+    if (group.groupType === "assessment") {
+      const plan = await planAssessmentRun(group);
+      if (!plan.ok) return reply.code(400).send({ error: plan.error });
+      assessment = plan.plan.assessment;
+      concurrencyLimit = plan.plan.browserConcurrency;
+    }
+
     const { job } = await launchJob({
       name: `${group.name} — manual run`,
       targetUrl: group.targetUrl,
@@ -355,6 +416,9 @@ export async function groupRoutes(app: FastifyInstance): Promise<void> {
       // ownership check, which is what makes the live view sit there
       // loading forever while the run itself is happily going.
       accountId: account,
+      kind: group.groupType === "assessment" ? "assessment" : "automation",
+      assessment,
+      concurrencyLimit,
     });
     const claimed = await setGroupActiveJob(group.id, job.id);
     if (!claimed) {

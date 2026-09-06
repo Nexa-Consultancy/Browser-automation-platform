@@ -3,6 +3,10 @@
 // packages/dashboard/src/types.ts) so the frontend build never has to
 // resolve backend-only TypeScript through the workspace graph.
 
+import type { AssessmentEventType, GroupType, JobKind } from "./assessmentTypes.js";
+import type { AssessmentPortalConfig } from "./portalConfig.js";
+import type { WorkflowStep } from "./stepParser.js";
+
 export type JobStatus = "pending" | "running" | "completed" | "stopped" | "failed";
 
 export type SessionStatus =
@@ -18,10 +22,20 @@ export interface Job {
   id: string;
   name: string;
   targetUrl: string;
-  steps: string[]; // raw English step lines, template placeholders like {{email}}
+  /** The script this run executes. Plain-English lines as it always was,
+   * and — for a run authored as a JSON template — action objects in the
+   * same array. parseSteps() turns both into the same ParsedStep. */
+  steps: WorkflowStep[]; // template placeholders like {{email}} still apply
   concurrency: number;
   status: JobStatus;
   groupId: string | null; // set when a scheduled group launched this run
+  /** Which runner inside the worker handles this. Existing rows read as
+   * "automation", which is exactly what they are. */
+  kind: JobKind;
+  /** For an assessment run: the portal configuration as it stood when the
+   * run was launched. Snapshotted rather than looked up, so editing a
+   * template mid-run cannot change what a running quiz is doing. */
+  assessment: AssessmentPortalConfig | null;
   createdAt: string;
 }
 
@@ -49,7 +63,11 @@ export type SessionEventType =
   | "video_wait_tick"
   | "log"
   | "status_change"
-  | "screencast_frame";
+  | "screencast_frame"
+  // The Assignments module's events ride this same channel — same table,
+  // same Redis relay, same live feed — which is why the existing run view
+  // shows a quiz's progress without knowing what a quiz is.
+  | AssessmentEventType;
 
 export interface SessionEvent {
   id: string;
@@ -116,7 +134,14 @@ export interface Group {
    * never been filed under one (shown as "Unassigned"). */
   organizationId: string | null;
   targetUrl: string;
-  steps: string[]; // same plain-English step language as a manual job
+  steps: WorkflowStep[]; // same step script a manual job runs (English lines or JSON actions)
+  /** Standard automation, or an assessment. Both use this same group: the
+   * same roster, days, window, timezone, Join now and scheduler — only the
+   * runner the launched job routes to differs. */
+  groupType: GroupType;
+  /** For an assessment group: the template carrying the portal config the
+   * quiz engine drives. Null until one is picked. */
+  assessmentTemplateId: string | null;
   userNames: string[]; // one entry per user; length IS the user count
   /** Reusable Users linked into this group's roster (see PlatformUser) —
    * each already has their own real, persistent Teams login, additive to

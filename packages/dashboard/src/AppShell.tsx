@@ -8,12 +8,14 @@ import { PeoplePanel } from "./components/PeoplePanel";
 import { DashboardView } from "./components/DashboardView";
 import { OrganizationsView } from "./components/OrganizationsView";
 import { SettingsView } from "./components/SettingsView";
+import { AssignmentsView } from "./components/AssignmentsView";
 import { AccountMenu } from "./components/AccountMenu";
 
 type Route =
   | { view: "runs" }
   | { view: "groups" }
   | { view: "organizations" }
+  | { view: "assignments" }
   | { view: "dashboard" }
   | { view: "settings" }
   | { view: "job"; jobId: string };
@@ -27,6 +29,9 @@ function routeFromHash(): Route {
   if (location.hash === "#/runs") return { view: "runs" };
   if (location.hash === "#/groups") return { view: "groups" };
   if (location.hash === "#/organizations") return { view: "organizations" };
+  // startsWith, not ===: the module keeps its own subsection in the hash
+  // (#/assignments/assignments), and both have to route here.
+  if (location.hash.startsWith("#/assignments")) return { view: "assignments" };
   if (location.hash === "#/settings") return { view: "settings" };
   return { view: "dashboard" };
 }
@@ -101,6 +106,9 @@ export function AppShell({
           <button className={route.view === "groups" ? "active" : ""} onClick={() => go("#/groups")}>
             Groups
           </button>
+          <button className={route.view === "assignments" ? "active" : ""} onClick={() => go("#/assignments")}>
+            Assignments
+          </button>
         </nav>
         <div className="app-header-right">
           <AccountMenu
@@ -125,6 +133,10 @@ export function AppShell({
       ) : route.view === "organizations" ? (
         <div className="container">
           <OrganizationsView onOpenJob={openJob} />
+        </div>
+      ) : route.view === "assignments" ? (
+        <div className="container">
+          <AssignmentsView onOpenJob={openJob} />
         </div>
       ) : route.view === "runs" ? (
         <div className="container">

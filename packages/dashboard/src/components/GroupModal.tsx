@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GroupWithSchedule, OrganizationWithCounts, PlatformUser, StepTemplate } from "../types";
+import type {
+  GroupWithSchedule,
+  OrganizationWithCounts,
+  PlatformUser,
+  GroupType,
+  StepTemplate,
+  WorkflowStep,
+} from "../types";
 import * as api from "../api";
+import { stepLines } from "../steps";
 import { StepReference } from "./StepReference";
 
 const TASK_PLACEHOLDER = `fill Email with {{name}}@example.com
@@ -30,8 +38,10 @@ const DAYS: { value: number; label: string }[] = [
 /** The stored steps always begin with the auto-injected "open {{url}}";
  * don't show that back to the user as if they had typed it — used both for
  * an existing group's saved steps and for a template's steps. */
-function stripAutoOpen(steps: string[]): string {
-  return steps.filter((s, i) => !(i === 0 && /^(open|go to|navigate to)\s+\{\{?url\}?\}$/i.test(s))).join("\n");
+function stripAutoOpen(steps: WorkflowStep[]): string {
+  return stepLines(steps)
+    .filter((s, i) => !(i === 0 && /^(open|go to|navigate to)\s+\{\{?url\}?\}$/i.test(s)))
+    .join("\n");
 }
 
 /** Grows/shrinks the name roster in place so names already typed survive a
@@ -83,9 +93,30 @@ export function GroupModal({
 
   const [name, setName] = useState(group?.name ?? "");
   const [organizationId, setOrganizationId] = useState<string>(group?.organizationId ?? defaultOrganizationId ?? "");
+  // Standard automation, or an assessment. Same group either way — same
+  // roster, days, window, timezone and scheduler; only the runner the
+  // launched job routes to differs.
+  const [groupType, setGroupType] = useState<GroupType>(group?.groupType ?? "standard");
+  const [assessmentTemplateId, setAssessmentTemplateId] = useState<string>(group?.assessmentTemplateId ?? "");
   const [organizations, setOrganizations] = useState<OrganizationWithCounts[]>([]);
   const [targetUrl, setTargetUrl] = useState(group?.targetUrl ?? "");
   const [steps, setSteps] = useState(initialSteps);
+  // Set when the Task came from a JSON template: the compiled actions, kept
+  // as objects so the group stores what the template actually says rather
+  // than a lossy English rendering of it. Cleared the moment somebody types
+  // in the plain-English box, because that is them choosing the other format.
+  const [jsonSteps, setJsonSteps] = useState<WorkflowStep[] | null>(
+    group && group.steps.some((s) => typeof s !== "string") ? group.steps : null,
+  );
+  // The JSON source, shown read-only while a JSON template is in force. A
+  // saved group keeps only its compiled steps (the template it came from can
+  // be edited or deleted afterwards), so re-opening one renders them back —
+  // it is the same workflow, just without the original formatting.
+  const [jsonSource, setJsonSource] = useState<string>(() =>
+    group && group.steps.some((s) => typeof s !== "string")
+      ? JSON.stringify({ steps: group.steps }, null, 2)
+      : "",
+  );
   // A brand new group starts with an empty free-text roster (0), not a
   // couple of blank required names — picking existing linked users below
   // should be enough on its own to save, with no free-text entry forced.
@@ -146,6 +177,13 @@ export function GroupModal({
     const t = templates.find((x) => x.id === id);
     if (!t) return;
     setTemplateId(id);
+    if (t.templateType === "json") {
+      setJsonSteps(t.steps);
+      setJsonSource(t.body ?? JSON.stringify({ steps: t.steps }, null, 2));
+    } else {
+      setJsonSteps(null);
+      setJsonSource("");
+    }
     setSteps(stripAutoOpen(t.steps));
     setShowPrompt(true);
     setDirty(true);
@@ -243,6 +281,9 @@ export function GroupModal({
       const payload = {
         name,
         organizationId: organizationId || null,
+        stepsJson: jsonSteps,
+        groupType,
+        assessmentTemplateId: groupType === "assessment" ? assessmentTemplateId || null : null,
         targetUrl,
         steps,
         userNames: filled,
@@ -344,6 +385,67 @@ export function GroupModal({
                   tab.
                 </div>
               </div>
+
+              {/* Type sits with the target because it is part of what this
+                  group IS, not a scheduling detail. Everything below —
+                  roster, days, window, Join now — behaves identically
+                  either way; only the runner differs. */}
+              <div className="form-row" style={{ maxWidth: 320, marginTop: 12 }}>
+                <label>Group type</label>
+                <div className="type-picker">
+                  <button
+                    type="button"
+                    className={groupType === "standard" ? "active" : ""}
+                    onClick={() => {
+                      setGroupType("standard");
+                      setDirty(true);
+                    }}
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    className={groupType === "assessment" ? "active" : ""}
+                    onClick={() => {
+                      setGroupType("assessment");
+                      setDirty(true);
+                    }}
+                  >
+                    Assessment
+                  </button>
+                </div>
+                <div className="hint">
+                  An assessment group runs the quiz engine after its task script has logged in. It uses this
+                  same schedule and roster — but only linked people can sit one, since a typed name has no
+                  identity to record results against.
+                </div>
+              </div>
+
+              {groupType === "assessment" && (
+                <div className="form-row" style={{ maxWidth: 420, marginTop: 12 }}>
+                  <label>Quiz template</label>
+                  <select
+                    value={assessmentTemplateId}
+                    onChange={(e) => {
+                      setAssessmentTemplateId(e.target.value);
+                      setDirty(true);
+                    }}
+                  >
+                    <option value="">Choose a template…</option>
+                    {templates
+                      .filter((t) => t.assessment)
+                      .map((t) => (
+                        <option value={t.id} key={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                  </select>
+                  <div className="hint">
+                    The template carrying this portal&rsquo;s quiz selectors. Only templates with an assessment
+                    config are listed — add one under Settings → Templates.
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-section">
@@ -514,18 +616,49 @@ export function GroupModal({
                   </div>
                 )}
                 <div className="form-row" hidden={!showPrompt}>
-                  <label>What this group should do (one step per line)</label>
-                  <textarea
-                    rows={6}
-                    value={steps}
-                    onChange={(e) => {
-                      setSteps(e.target.value);
-                      // Hand-edited steps are no longer that template's.
-                      setTemplateId("");
-                    }}
-                    placeholder={TASK_PLACEHOLDER}
-                  />
-                  <StepReference />
+                  {jsonSteps ? (
+                    <>
+                      {/* A JSON template runs as it is written. Showing the
+                          English rendering in an editable box would invite an
+                          edit that silently discarded the target strategies
+                          the format exists for, so the source is shown as
+                          source and changing it means changing the template. */}
+                      <label>What this group should do (JSON template)</label>
+                      <textarea className="code-editor" rows={10} readOnly value={jsonSource} />
+                      <div className="hint">
+                        This group runs the JSON template as written, target strategies and all. Edit the
+                        template under Settings → Templates to change it, or{" "}
+                        <button
+                          type="button"
+                          className="detail-toggle"
+                          onClick={() => {
+                            setJsonSteps(null);
+                            setJsonSource("");
+                            setTemplateId("");
+                            setDirty(true);
+                          }}
+                        >
+                          write plain-English steps instead
+                        </button>
+                        .
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <label>What this group should do (one step per line)</label>
+                      <textarea
+                        rows={6}
+                        value={steps}
+                        onChange={(e) => {
+                          setSteps(e.target.value);
+                          // Hand-edited steps are no longer that template's.
+                          setTemplateId("");
+                        }}
+                        placeholder={TASK_PLACEHOLDER}
+                      />
+                      <StepReference />
+                    </>
+                  )}
                 </div>
 
                 <div className="form-row" style={{ maxWidth: 320, marginTop: 16 }}>

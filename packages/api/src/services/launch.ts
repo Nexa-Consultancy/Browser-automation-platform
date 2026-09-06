@@ -5,7 +5,14 @@ import {
   setJobStatus,
 } from "@automation/db";
 import { enqueueJob } from "@automation/queue";
-import type { CsvUserRow, Job, SessionRow } from "@automation/shared";
+import type {
+  AssessmentPortalConfig,
+  CsvUserRow,
+  Job,
+  JobKind,
+  SessionRow,
+  WorkflowStep,
+} from "@automation/shared";
 import { publishControl } from "../pubsub.js";
 
 const OPEN_STEP_RE = /^(open|go to|navigate to)\s+/i;
@@ -30,6 +37,20 @@ export function normalizeSteps(stepsText: string): string[] {
 }
 
 /**
+ * The same courtesy for a script authored as JSON.
+ *
+ * Kept as one rule rather than two so a group behaves identically whichever
+ * format it was written in: the first step is a navigation to the group's
+ * link unless the author wrote their own, in both formats.
+ */
+export function normalizeWorkflowSteps(steps: WorkflowStep[]): WorkflowStep[] {
+  const first = steps[0];
+  const startsWithNavigation =
+    typeof first === "string" ? OPEN_STEP_RE.test(first) : first?.type === "navigate";
+  return startsWithNavigation ? [...steps] : ["open {{url}}", ...steps];
+}
+
+/**
  * The single path from "a URL + a step script + a roster of users" to a
  * live run. Both the manual dashboard form and the group scheduler go
  * through here, so a scheduled run is byte-for-byte the same kind of job as
@@ -38,14 +59,23 @@ export function normalizeSteps(stepsText: string): string[] {
 export async function launchJob(input: {
   name: string;
   targetUrl: string;
-  steps: string[];
+  steps: WorkflowStep[];
   users: CsvUserRow[];
   groupId?: string | null;
   /** The workspace this run belongs to, so its history and live view stay
    * private to that account. */
   accountId?: string | null;
+  /** Which runner the worker uses. Omitted means the ordinary step runner,
+   * which is every caller that existed before the Assignments module. */
+  kind?: JobKind;
+  /** For an assessment run: the portal config, snapshotted at launch. */
+  assessment?: AssessmentPortalConfig | null;
+  /** Cap on browsers open at once for this run. Assessment runs pass a
+   * lower one than the roster size, because an assessment session is long-
+   * lived and Chromium is the expensive part. */
+  concurrencyLimit?: number;
 }): Promise<{ job: Job; sessions: SessionRow[] }> {
-  const concurrency = Math.min(input.users.length, 50);
+  const concurrency = Math.min(input.users.length, input.concurrencyLimit ?? 50);
   const job = await createJob({
     name: input.name,
     targetUrl: input.targetUrl,
@@ -53,6 +83,8 @@ export async function launchJob(input: {
     concurrency,
     groupId: input.groupId ?? null,
     accountId: input.accountId ?? null,
+    kind: input.kind ?? "automation",
+    assessment: input.assessment ?? null,
   });
   const sessions = await createSessions(job.id, input.users, input.steps.length);
   await enqueueJob(job.id);

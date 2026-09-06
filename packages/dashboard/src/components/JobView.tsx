@@ -3,6 +3,7 @@ import type { Job, SessionRow, InputAction } from "../types";
 import { applySessionEvent, initSessionLive, reconcileSession, type SessionLive } from "../sessionState";
 import { useJobSocket } from "../useJobSocket";
 import * as api from "../api";
+import { stepLines } from "../steps";
 import { StatusBadge } from "./StatusBadge";
 import { UserSessionBox, LIVE_INTERACTIVE, BROWSER_OPEN } from "./UserSessionBox";
 import { ScreencastModal } from "./ScreencastModal";
@@ -37,7 +38,7 @@ export function JobView({ jobId, onBack }: { jobId: string; onBack: () => void }
           const next: Record<string, SessionLive> = {};
           for (const s of sessions) {
             const current = prev[s.id];
-            next[s.id] = current ? reconcileSession(current, s) : initSessionLive(s, job.steps);
+            next[s.id] = current ? reconcileSession(current, s) : initSessionLive(s, stepLines(job.steps));
           }
           return next;
         });

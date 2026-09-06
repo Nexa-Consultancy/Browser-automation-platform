@@ -1,3 +1,9 @@
+import {
+  templateTypeOf,
+  type AssessmentPortalConfig,
+  type TemplateType,
+  type WorkflowStep,
+} from "@automation/shared";
 import { pool } from "./pool.js";
 
 /** The two creation flows a template can be the default for. Organizations
@@ -13,7 +19,19 @@ export function isTemplateScope(value: unknown): value is TemplateScope {
 export interface StepTemplate {
   id: string;
   name: string;
-  steps: string[];
+  /** The normalized workflow — English lines for a plain template, compiled
+   * actions for a JSON one. This is what a group copies and a job runs, so
+   * it is populated for every runnable format. */
+  steps: WorkflowStep[];
+  /** Which format this was authored in. A row that predates the column
+   * reads as "plain", which is what every existing template is. */
+  templateType: TemplateType;
+  /** The source as typed, for the formats that have one: the raw JSON, or
+   * the TypeScript. Null for a plain template, whose source IS its steps. */
+  body: string | null;
+  /** The portal configuration, when this is an assessment template. Null
+   * otherwise — an ordinary template has no quiz to describe. */
+  assessment: AssessmentPortalConfig | null;
   /** "group" = prefills a new group's Task, "user" = the script "Add user"
    * runs to capture a sign-in. At most one template holds each. */
   defaultFor: TemplateScope | null;
@@ -23,7 +41,10 @@ export interface StepTemplate {
 interface TemplateDbRow {
   id: string;
   name: string;
-  steps: string[];
+  steps: WorkflowStep[];
+  template_type: string | null;
+  body: string | null;
+  assessment: AssessmentPortalConfig | null;
   default_for: TemplateScope | null;
   created_at: Date;
 }
@@ -33,16 +54,37 @@ function toTemplate(r: TemplateDbRow): StepTemplate {
     id: r.id,
     name: r.name,
     steps: r.steps,
+    templateType: templateTypeOf(r.template_type),
+    body: r.body,
+    assessment: r.assessment ?? null,
     defaultFor: r.default_for,
     createdAt: r.created_at.toISOString(),
   };
 }
 
-export async function listTemplates(accountId: string): Promise<StepTemplate[]> {
-  const { rows } = await pool.query<TemplateDbRow>(
-    `SELECT * FROM step_templates WHERE account_id = $1 ORDER BY name`,
-    [accountId],
-  );
+/**
+ * A workspace's templates, optionally narrowed to one format.
+ *
+ * The filter is done in SQL rather than in the client so that "JSON" means
+ * the same thing to the dashboard's filter buttons and to anything else
+ * that asks — and so a workspace with hundreds of scripts doesn't ship all
+ * of them to render three. `undefined` (and the "all" filter) means every
+ * type, which is what every existing caller gets.
+ */
+export async function listTemplates(accountId: string, type?: TemplateType): Promise<StepTemplate[]> {
+  const { rows } = type
+    ? await pool.query<TemplateDbRow>(
+        // COALESCE, not `= $2`: rows written before template_type existed
+        // hold NULL and are plain-English, so filtering for "plain" has to
+        // find them.
+        `SELECT * FROM step_templates
+          WHERE account_id = $1 AND COALESCE(template_type, 'plain') = $2
+          ORDER BY name`,
+        [accountId, type],
+      )
+    : await pool.query<TemplateDbRow>(`SELECT * FROM step_templates WHERE account_id = $1 ORDER BY name`, [
+        accountId,
+      ]);
   return rows.map(toTemplate);
 }
 
@@ -51,6 +93,18 @@ export async function getTemplate(id: string, accountId: string): Promise<StepTe
     `SELECT * FROM step_templates WHERE id = $1 AND account_id = $2`,
     [id, accountId],
   );
+  return rows[0] ? toTemplate(rows[0]) : null;
+}
+
+/**
+ * Unscoped lookup, for the paths that already hold the id and have no
+ * account of their own — the group scheduler, and the assessment launch
+ * plan it shares with "Join now". Same convention (and same naming) as
+ * getGroupUnscoped, so reaching for it from a request handler looks as
+ * wrong as it would be.
+ */
+export async function getTemplateUnscoped(id: string): Promise<StepTemplate | null> {
+  const { rows } = await pool.query<TemplateDbRow>(`SELECT * FROM step_templates WHERE id = $1`, [id]);
   return rows[0] ? toTemplate(rows[0]) : null;
 }
 
@@ -64,14 +118,28 @@ export async function getDefaultTemplate(accountId: string, scope: TemplateScope
   return rows[0] ? toTemplate(rows[0]) : null;
 }
 
-export async function createTemplate(input: {
+export interface TemplateInput {
   name: string;
-  steps: string[];
-  accountId: string;
-}): Promise<StepTemplate> {
+  /** Already normalized by the route — see parseTemplateBody, which is the
+   * one place that knows how each format becomes a workflow. */
+  steps: WorkflowStep[];
+  templateType: TemplateType;
+  body: string | null;
+  assessment: AssessmentPortalConfig | null;
+}
+
+export async function createTemplate(input: TemplateInput & { accountId: string }): Promise<StepTemplate> {
   const { rows } = await pool.query<TemplateDbRow>(
-    `INSERT INTO step_templates (name, steps, account_id) VALUES ($1, $2::jsonb, $3) RETURNING *`,
-    [input.name, JSON.stringify(input.steps), input.accountId],
+    `INSERT INTO step_templates (name, steps, template_type, body, assessment, account_id)
+     VALUES ($1, $2::jsonb, $3, $4, $5::jsonb, $6) RETURNING *`,
+    [
+      input.name,
+      JSON.stringify(input.steps),
+      input.templateType,
+      input.body,
+      input.assessment ? JSON.stringify(input.assessment) : null,
+      input.accountId,
+    ],
   );
   return toTemplate(rows[0]);
 }
@@ -79,11 +147,21 @@ export async function createTemplate(input: {
 export async function updateTemplate(
   id: string,
   accountId: string,
-  input: { name: string; steps: string[] },
+  input: TemplateInput,
 ): Promise<StepTemplate | null> {
   const { rows } = await pool.query<TemplateDbRow>(
-    `UPDATE step_templates SET name = $2, steps = $3::jsonb WHERE id = $1 AND account_id = $4 RETURNING *`,
-    [id, input.name, JSON.stringify(input.steps), accountId],
+    `UPDATE step_templates
+        SET name = $2, steps = $3::jsonb, template_type = $4, body = $5, assessment = $6::jsonb
+      WHERE id = $1 AND account_id = $7 RETURNING *`,
+    [
+      id,
+      input.name,
+      JSON.stringify(input.steps),
+      input.templateType,
+      input.body,
+      input.assessment ? JSON.stringify(input.assessment) : null,
+      accountId,
+    ],
   );
   return rows[0] ? toTemplate(rows[0]) : null;
 }
@@ -146,6 +224,8 @@ export async function deleteTemplate(id: string, accountId: string): Promise<boo
  * copies, and a migration cannot know about an account that does not exist
  * yet. Mirrors the seeded rows the original single-workspace build had. */
 const STARTER_TEMPLATES: { name: string; steps: string[]; defaultFor: TemplateScope }[] = [
+  // All plain-English: the starter scripts are what a new workspace reads
+  // first, and prose is the format that explains itself.
   {
     name: "Join meeting",
     defaultFor: "group",
@@ -201,7 +281,8 @@ export async function seedTemplatesForAccount(accountId: string): Promise<void> 
 
   for (const t of STARTER_TEMPLATES) {
     await pool.query(
-      `INSERT INTO step_templates (name, steps, default_for, account_id) VALUES ($1, $2::jsonb, $3, $4)`,
+      `INSERT INTO step_templates (name, steps, default_for, template_type, account_id)
+       VALUES ($1, $2::jsonb, $3, 'plain', $4)`,
       [t.name, JSON.stringify(t.steps), t.defaultFor, accountId],
     );
   }
